@@ -6,13 +6,13 @@ To release a new version, do the following:
 
 -) cvs tag {ver}
 
--) make dist
-
--) Generate rpms.
-
 -) pod2html mtop > mtop.html
 
 -) Copy mtop.html to the htdocs tree
+
+-) make dist
+
+-) Generate rpms.
 
 -) Add new release info to index.html
 

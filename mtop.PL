@@ -39,7 +39,7 @@ $Config{'startperl'}
 
 print OUT <<'!NO!SUBS!';
 #
-# $Id: mtop.PL,v 1.46 2002/05/03 13:32:47 mdprewitt Exp $
+# $Id: mtop.PL,v 1.49 2002/06/30 03:18:34 mdprewitt Exp $
 #
 # mtop - Shows the MySQL commands consuming the greatest time
 # Copyright (C) 2002 Marc Prewitt/Chelsea Networks <mprewitt@chelsea.net>
@@ -279,17 +279,16 @@ Offer sorts by other columns
 
 For the 'More:' paging, it would be nice to support 'Less' behaviour.
 
-Add 'show status' and 'show variables' output.
-
 Add support for saving commandline opts in ~/.mtop
 
 Add 'n' command and properly calculate number of lines on screen.
 
-    $Id: mtop.PL,v 1.46 2002/05/03 13:32:47 mdprewitt Exp $
+    $Id: mtop.PL,v 1.49 2002/06/30 03:18:34 mdprewitt Exp $
 
 =cut
 
 use strict;
+
 use vars qw( $VERSION $RELEASE %PROC_COLS @PROC_COLS %EXPLAIN_COLS @EXPLAIN_COLS $WINDOW_RESIZE );
 
 use DBI;
@@ -364,6 +363,8 @@ my %VARS;    # 'show variables' info
 #
 my %DB;    
 
+init_screen();
+
 GetOptions(
         'debug:i'             => \$DEBUG,
         'h|host:s'            => \$opt_host,
@@ -385,6 +386,8 @@ GetOptions(
         'idle!'               => \$opt_idle,
     ) || usage();
     
+$DEBUG = 1 if defined $DEBUG;
+
 $| = 1;
 
 show_version() if $opt_version;
@@ -409,6 +412,7 @@ my $st_flush   = $dbh->prepare("flush status");
 my $st_vars    = $dbh->prepare("show variables");
 my $st_master_stat = $dbh->prepare("show master status");
 my $st_slave_stat = $dbh->prepare("show slave status");
+my $st_slave_start = $dbh->prepare("slave start");
 
 my $CURSES_INIT;
 my $SCREEN_WIDTH;
@@ -416,8 +420,6 @@ my $SCREEN_HEIGHT;
 my $ALMOST_SLOW_COLOR;
 my $SLOW_COLOR;
 my $REALLY_SLOW_COLOR;
-
-init_screen();
 
 $WINDOW_RESIZE = 0;
 $SIG{WINCH} = sub { $WINDOW_RESIZE = 1 };
@@ -722,10 +724,22 @@ sub do_kill {
 #  and slaves running and also connect to any connected remote
 #  slaves to get their status.
 #
+#  Allow the user to restart replication on the local slave.
+#
 sub do_replication {
-    do {
+    my $key;
+    while(1) {
         if ($WINDOW_RESIZE) {
             handle_resize();
+        }
+
+        my $key = getch_nb();
+        if ( $key eq 's' ) {
+            skip_slave_until_running();
+        } elsif ($key eq '1' or $key eq '2') {
+            skip_slave($key);
+        } elsif ($key != -1) {
+            last;
         }
 
         my ($master_pos, @info) = repl_getmaster();
@@ -736,8 +750,10 @@ sub do_replication {
         
         more(@info);
 
-        message("Press any key to return") 
-    } while !sleep_or_key($opt_seconds) || getch_nb() == -1;
+        message("Press any key to return [1/2/s] to skip and restart slave");
+
+        sleep_or_key($opt_seconds);
+    }
 
     return 1;
 }
@@ -791,6 +807,42 @@ sub repl_get_local_slave {
         push @info, " ";
     }
     return @info;
+}
+
+#
+#  Reset slave replication by skipping ahead in the binlog.  
+#  This should really look at the query and table structure and
+#  figure out if the counter needs to be set to 1 or 2.
+#
+sub skip_slave {
+    my $count = shift;
+    my $st_skip = $dbh->prepare("set sql_slave_skip_counter=$count");
+    $st_skip->execute() or return pause("Unable to skip slave [" . $dbh->errstr() . "]"), undef;
+    $st_slave_start->execute() or return pause("Unable to start slave [" . $dbh->errstr() . "]"), undef;
+    return 1;
+}
+
+#
+#  Reset slave replication until it runs successfully for 5 seconds
+#
+sub skip_slave_until_running {
+    my $skipped;
+    my $error_time = time;
+    do {
+        $st_slave_stat->execute() or return pause("Unable to execute SHOW SLAVE STATUS [" .  $dbh->errstr() . "]"), undef;
+
+        while (my $row = $st_slave_stat->fetchrow_hashref()) {
+            if ($row->{Master_Host} and $row->{Slave_Running} eq "No") {
+                skip_slave(1) or return undef;
+                $skipped++;
+                $error_time = time;
+            } else {
+                sleep_or_key(1) ;
+            }
+            message("Skipping in progress, press any key to stop: $skipped");
+        }
+    } while (time - $error_time < 5) and getch_nb() == -1;
+    return 1;
 }
 
 #
@@ -920,7 +972,7 @@ sub refresh_screen {
     move(0, 0);
     clrtobot();
     header();
-    $st_procs->execute() || die "Unable to execute show procs" . $dbh->errstr() . "\n";
+    $st_procs->execute() || die "Unable to execute show procs [" . $dbh->errstr() . "]\n";
     my @rows;
     while (my $row = $st_procs->fetchrow_hashref()) {
         if ( filter_ok($row) ) {
@@ -948,8 +1000,10 @@ sub refresh_screen {
             # Remove nl and multi spaces so that data doesn't move off the 
             # line it's supposed to be on.
             $data =~ s/\n//g;
-            $data =~ s/\s+/ /g;
             $data =~ s/\.$DOMAIN//o if $col eq "Host";
+            $data = strip_comments($data) if $col eq "Info";
+            $data =~ s/\s+/ /g;
+            $data =~ s/^\s+//;
             $data = substr($data, 0, $width);  # limit the data to the width of the column
 
             my $query_color = query_color($row);
@@ -1290,7 +1344,7 @@ sub init_screen {
 #  Reinitialize curses system.
 #
 sub handle_resize {
-    endwin() if $CURSES_INIT;
+    cleanup_win();
     init_screen();
     refresh();
     $WINDOW_RESIZE = 0;
@@ -1305,7 +1359,7 @@ sub sort_procs {
 }
 
 sub show_version {
-    endwin() if $CURSES_INIT;
+    cleanup_win();
     print "\n", version(), "\n";
     exit;
 }
@@ -1338,6 +1392,31 @@ sub get_mysql_memory {
         }
     }
     return undef;
+}
+
+#
+#  Remove SQL comments.
+#  Code from: http://aspn.activestate.com/ASPN/Cookbook/Rx/Recipe/59811
+#  Author unattributed on activestate but it looks like it's based on 
+#  code in "Mastering Regular Expressions" by Jeffrey E F Friedl
+#
+sub strip_comments {
+    my $str = shift;
+    # Build the comment regex up step by step.
+    # 1. A complicated regex which matches C-style comments.
+    my $regex_comment = qr{/\*[^*]*\*+([^/*][^*]*\*+)*/};
+
+    # 2. A regex which matches double-quoted strings.
+    my $regex_double = qr{(?:\"(?:\\.|[^\"\\])*\")};
+
+    # 3. A regex which matches single-quoted strings.
+    my $regex_single = qr{(?:\'(?:\\.|[^\'\\])*\')};
+
+    # 4. Now combine 1 through 3 to produce a regex which
+    #    matches _either_ double or single quoted strings
+    #    OR comments. 
+    $str =~ s{($regex_double|$regex_single)|($regex_comment)}{$1}g;
+    return $str;
 }
 
 #
@@ -1396,8 +1475,68 @@ sub version {
     return "mtop ver $VERSION/$RELEASE";
 }
 
+sub cleanup_win {
+    if ($CURSES_INIT) {
+        # the move/clear/refresh looks like it should work,
+        # however, it looks list it causes stderr to be cleared
+        # after endwin
+        # move(0,0);
+        # clrtobot();
+        # refresh();
+        endwin();
+    }
+}
+
+#
+#  If we're in the debugger, don't do this!
+#
+
+BEGIN {
+    unless ( defined $DB::VERSION ) {
+        my $Die = sub {
+            if ($^S) {
+                #
+                #  We are in an eval, so wake up and die right.
+                #
+                CORE::die @_;
+            } else {
+                cleanup_win();
+                print STDERR @_;
+                print STDERR "Stack Trace: \n" if caller(2);
+                print STDERR _getStackTrace();
+            }
+        };
+
+        my $current;
+        if ( $current = $SIG{__DIE__} and ref($current) eq "CODE") {
+            $SIG{__DIE__} = sub { &$Die(@_); &$current(@_); }
+        } else {
+            $SIG{__DIE__} = sub { &$Die(@_); CORE::die "\n"; }
+        }
+    }
+}
+
+sub _getStackTrace {
+    my $calling_sub = "main";
+    my $trace;
+    my $i = 2;
+    while ( my @level = caller($i++) ) {
+        my $line = "    at $calling_sub($level[1]:$level[2])";
+        if ($level[5]) {
+            $line .= " in array context";
+        }
+        $trace = "$line\n$trace";
+        $calling_sub = $level[3];
+    }
+    return $trace;
+}
+
+END {
+    cleanup_win();
+}
+
 sub usage {
-    endwin() if $CURSES_INIT;
+    cleanup_win();
     print "\n", version(), qq{
 
 Copyright (C) 2002 Marc Prewitt/Chelsea Networks <mprewitt\@chelsea.net>
@@ -1431,22 +1570,6 @@ See 'man mtop' or 'perldoc mtop' for more information.
     exit();
 }
 
-sub cleanup_win {
-    if ($CURSES_INIT) {
-        move(0,0);
-        clrtobot();
-        refresh();
-        endwin();
-    }
-}
-
-sub die {
-    CORE::die(@_);
-}
-
-END {
-    cleanup_win();
-}
 
 =begin showsatus
 

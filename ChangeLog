@@ -1,9 +1,18 @@
-Release v0-6-1
+Release v0-6-2
 ==============
 
 mtop
 ----
 
+In main monitor window, strip out comments so we can see the actual
+query.  Comments will still appear in the zoom/explain views.
+Also removed leading spaces from display columns.
+
+Release v0-6-1
+==============
+
+mtop
+----
 
 Added replication status page (screen command 'r').  This page updates
 similar to the main screen.  Three types of replication status are

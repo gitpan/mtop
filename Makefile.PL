@@ -1,5 +1,5 @@
 #
-# $Id: Makefile.PL,v 1.12 2002/05/21 12:58:11 mdprewitt Exp $
+# $Id: Makefile.PL,v 1.14 2002/07/01 13:38:48 mdprewitt Exp $
 #  
 #  mtop Makefile
 #
@@ -52,7 +52,7 @@ $m = "0$m" if $m < 9;
 $d = "0$d" if $d < 9;
 
 my $release = "$y$m$d";
-my $version = "0.6.1";
+my $version = "0.6.2";
 
 my %opts =  (
     ABSTRACT      => 'A top program for MySQL which shows the longest running queries.',
@@ -60,7 +60,7 @@ my %opts =  (
     NAME          => 'mtop',
     DISTNAME      => 'mtop',
     VERSION       => $version,
-    DEFINE        => '-DMAKEFILE_PL_VER=' . (qw$Revision: 1.12 $)[1],
+    DEFINE        => '-DMAKEFILE_PL_VER=' . (qw$Revision: 1.14 $)[1],
     dist          => { COMPRESS=>'gzip -9f', SUFFIX => 'gz',
                      ZIP=>'/usr/bin/zip',ZIPFLAGS=>'-rl'},
     INST_SCRIPT   => './blib/bin',
