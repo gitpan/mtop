@@ -39,7 +39,7 @@ $Config{'startperl'}
 
 print OUT <<'!NO!SUBS!';
 #
-# $Id: mtop.PL,v 1.31 2002/01/07 12:38:32 mprewitt Exp $
+# $Id: mtop.PL,v 1.38 2002/02/03 05:10:24 mdprewitt Exp $
 #
 # mtop - Shows the MySQL commands consuming the greatest time
 # Copyright (C) 2002 Marc Prewitt/Chelsea Networks <mprewitt@chelsea.net>
@@ -59,15 +59,18 @@ print OUT <<'!NO!SUBS!';
 # 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 # 
 #
+
 =head1 NAME 
 
 B<mtop> - Shows top mysql threads
 
 =head1 SYNOPSIS
 
-    mtop [--host {mysql_host}] [--dbuser {mysql_user}] 
-        [--password {mysqluser_pw}] [--seconds {refresh}] [--[no]idle] 
-        [--user {user}] [--manualrefresh]
+    mtop [--host={mysql_host}] [--dbuser={mysql_user}] 
+        [--password={mysqluser_pw}] [--seconds={refresh}] [--[no]idle] 
+        [--filter-user={regex}] [--filter-host={regex}] [--filter-db={regex}]
+        [--filter-command={regex}] [--filter-state={regex}] [--filter-info={{regex}}]
+        [--user={user}] [--manualrefresh]
 
     mtop --help
 
@@ -87,17 +90,19 @@ short refresh time will allow you to catch short lived queries as well.
 
 The following keys are active while mtop is running:
 
-    q       - quit
-    h or ?  - help
-    f       - flush status
-    k       - kill processes; send a kill to a list of ids
-    s       - change the number of seconds to delay between updates
-    m       - toggle manual refresh mode on/off
-    u       - display process for only one user (+ selects all users)
-    i       - toggle all/non-Sleeping process display
-    o       - reverse the sort order
-    e       - explain a process; show query optimizer info
-    z       - zoom in on a process; show sql statement detail 
+    q - quit
+    ? - help
+    f - flush status
+    k - kill processes; send a kill to a list of ids
+    s - change the number of seconds to delay between updates
+    m - toggle manual refresh mode on/off
+    d - filter display with regular expression (user/host/db/command/state/info)
+    h - display process for only one host
+    u - display process for only one user
+    i - toggle all/non-Sleeping process display
+    o - reverse the sort order
+    e - explain a process; show query optimizer info
+    z - zoom in on a process; show sql statement detail 
 
 =head1 OPTIONS
 
@@ -105,42 +110,68 @@ All options can be abbreviated by their shortest unique abbreviation.
 
 =over 4
 
-=item B<-?>, B<--help>  
+=item -?, --help  
 
 Show the help screen and exit.
 
-=item B<-v>, B<--version>  
+=item -v, --version  
 
 Show the version number and exit.
 
-=item B<-h> {mysql_host}, B<--host>={mysql_host}  
+=item -h {mysql_host}, --host={mysql_host}  
 
 By default, the mysqld on localhost is monitored.  Specify an alternate host
 with this option.
 
-=item B<-dbu> {mysql_user} B<--dbuser>={mysql_user}
+=item -dbu {mysql_user}, --dbuser={mysql_user}
 
 By default, the user 'mysqltop' is used to connect to the database.  Specify an alternate user with this option.
 
-=item B<-p> {mysqluser_pw}, B<--password>={mysqluser_pw}
+=item -p {mysqluser_pw}, --password={mysqluser_pw}
 
 By default, there is no password associated with the mysqltop
 user, specify a password with this option.
 
-=item B<-s> {refresh}, B<--seconds>={refresh}
+=item -s {refresh}, --seconds={refresh}
 
 The default screen refresh is 5 seconds.
 
-=item B<-i>, B<--[no]idle> 
+=item -i, --[no]idle 
 
 By default, processes in the B<Sleep> command state are not shown.  This option turns
 on display of idle threads.
 
-=item B<-u> {user}, B<--user>={user}
+=item -u {user}, --user={user}
 
 Show only threads owned by this user.
 
-=item B<-m>, B<--manualrefresh> 
+=item -fu {regex_pattern}, --filter-user={regex_pattern}
+
+=item -fh {regex_pattern}, --filter-host={regex_pattern}
+
+=item -fd {regex_pattern}, --filter-db={regex_pattern}
+
+=item -fs {regex_pattern}, --filter-state={regex_pattern}
+
+=item -fc {regex_pattern}, --filter-command={regex_pattern}
+
+=item -fi {regex_pattern}, --filter-info={regex_pattern}
+
+Filter the display based on the B<regex_pattern> provided.  The B<regex_pattern> is a perl
+regular expression.  The regular expression match is done with case insensitivity.
+
+For example, to only show B<select> statements on the B<user> table, use the following:
+
+    --filter-info='select from user'
+
+or, to be more forgiving for mutil-table joins and extra spaces, use:
+
+    --filter-info='select\s+from\s+.*\buser\b.*where'
+
+These same regular expression filters can be used with the interactive B<d> command.
+Be careful to escape any special shell characters in the regex.
+
+=item -m, --manualrefresh 
 
 In this mode, the screen only refreshes when the user hits a key on the
 keyboard.  The screen will refresh automatically until a query is seen and then wait for 
@@ -154,6 +185,19 @@ indicate that you are in this mode.
 The most convenient way to setup your system to use B<mtop> is to create a database user
 called B<mysqltop> which has no password.  For security purposes, this user should have 
 all privileges set to B<N> except B<Process_priv> which must be set to B<Y>.
+
+To grant these privileges, execute the following from the MySQL command prompt
+
+    mysql> grant select on test.* to mysqltop;
+    mysql> grant select on test.* to mysqltop@localhost;
+    mysql> update user set process_priv='y' where user='mysqltop';
+    mysql> flush privileges;
+
+Note: GRANT only works in MySQL 3.22.11 or later, for earlier versions add the user
+manually and fix the permissions as noted above.  Note 2: the GRANT to mysqltop and
+mysqltop@localhost may be modified depending upon which hosts you want to grant
+access from.  In general, you probably want to limit it to the hosts in your
+domain.
 
 In addition, the B<mysqltop> user must have B<Select_priv> to the B<test> database.  This 
 requirement is only needed because the DBI driver requires a database to connect to even
@@ -185,7 +229,22 @@ mtop comes with ABSOLUTELY NO WARRANTY. This is free software, and you are
 welcome to redistribute it under certain conditions; see the COPYING file 
 for details.
 
+=head1 BUGS
+
+Win2K telnet.exe - If you are using the Windows 2000 telnet program, it defaults
+to ansi mode which doesn't work well with curses (in my testing on Solaris 8).  
+To work around this, set the terminal type to vt100.  To do this, issue the
+following command from the telnet prompt before connecting to a host:
+
+    set term vt100
+
+Alternatively, you can manually set your TERM environment variable to vt100
+after you are logged in.
+
 =head1 TODO
+
+Feature to allow regex filters on other display columns.  Show
+current filters.
 
 Offer sorts by other columns
 
@@ -196,6 +255,8 @@ Add 'show status' and 'show variables' output.
 Add support for saving commandline opts in ~/.mtop
 
 Add 'n' command and properly calculate number of lines on screen.
+
+    $Id: mtop.PL,v 1.38 2002/02/03 05:10:24 mdprewitt Exp $
 
 =cut
 
@@ -224,6 +285,13 @@ my $opt_user;
 my $opt_version;
 my $opt_help;
 my $opt_manualrefresh;
+
+my $opt_filterhost;
+my $opt_filteruser;
+my $opt_filterdb;
+my $opt_filtercommand;
+my $opt_filterstate;
+my $opt_filterinfo;
 
 my $PROMPT_ROW = 3;
 my $SORT = DESC;
@@ -266,17 +334,23 @@ my %VARS;    # 'show variables' info
 my %DB;    
 
 GetOptions(
-        'h|host:s'      => \$opt_host,
-        'dbuser:s'      => \$opt_dbuser,
-        'dbport:i'      => \$opt_dbport,
-        'dbsocket:s'    => \$opt_dbsocket,
-        'user:s'        => \$opt_user,
-        'password:s'    => \$opt_passwd,
-        'seconds:i'     => \$opt_seconds,
-        'version'       => \$opt_version,
-        'help|?'          => \$opt_help,
-        'manualrefresh' => \$opt_manualrefresh,
-        'idle!'         => \$opt_idle,
+        'h|host:s'            => \$opt_host,
+        'dbuser:s'            => \$opt_dbuser,
+        'dbport:i'            => \$opt_dbport,
+        'dbsocket:s'          => \$opt_dbsocket,
+        'user:s'              => \$opt_user,
+        'password:s'          => \$opt_passwd,
+        'seconds:i'           => \$opt_seconds,
+        'fu|filter-user:s'    => \$opt_filteruser,
+        'fh|filter-host:s'    => \$opt_filterhost,
+        'fd|filter-db:s'      => \$opt_filterdb,
+        'fc|filter-command:s' => \$opt_filtercommand,
+        'fs|filter-state:s'   => \$opt_filterstate,
+        'fi|filter-info:s'    => \$opt_filterinfo,
+        'version'             => \$opt_version,
+        'help|?'              => \$opt_help,
+        'manualrefresh'       => \$opt_manualrefresh,
+        'idle!'               => \$opt_idle,
     ) || usage();
     
 $| = 1;
@@ -313,9 +387,6 @@ init_screen();
 $WINDOW_RESIZE = 0;
 $SIG{WINCH} = sub { $WINDOW_RESIZE = 1 };
 
-#  Try to lower our priority (which, who, pri)
-setpriority(0,0,20);
-
 my $reset = time + $opt_seconds;
 refresh_vars();
 refresh_screen();
@@ -342,6 +413,10 @@ while (1) {
     } elsif ($key eq "i") {
         if ($opt_idle) { $opt_idle = 0 } else { $opt_idle = 1 };
         $refresh = 1;
+    } elsif ($key eq "d") {
+        $refresh = do_filter();
+    } elsif ($key eq "h") {
+        $refresh = do_host();
     } elsif ($key eq "u") {
         $refresh = do_user();
     } elsif ($key eq "+") {
@@ -355,7 +430,7 @@ while (1) {
         $refresh = 1;
     } elsif ($key eq "z") {
         $refresh = do_zoom();
-    } elsif ($key eq "?" || $key eq "h") {
+    } elsif ($key eq "?") {
         $refresh = do_help();
     } else {
         refresh_screen();
@@ -406,22 +481,24 @@ A top users display for mysql
 
 These single-character commands are available:
 
-q       - quit
-h or ?  - help; show this text
-f       - flush status
-k       - kill processes; send a kill to a list of ids
-s       - change the number of seconds to delay between updates
-m       - toggle manual refresh mode on/off
-u       - display process for only one user (+ selects all users)
-i       - toggle all/non-Sleeping process display
-o       - reverse the sort order
-e       - explain a process; show query optimizer info
-z       - zoom in on a process, show sql statement detail 
+q - quit
+? - help; show this text
+f - flush status
+k - kill processes; send a kill to a list of ids
+s - change the number of seconds to delay between updates
+m - toggle manual refresh mode on/off
+d - filter display with regular expression (user/host/db/command/state/info)
+h - display process for only one host
+u - display process for only one user
+i - toggle all/non-Sleeping process display
+o - reverse the sort order
+e - explain a process; show query optimizer info
+z - zoom in on a process, show sql statement detail 
 
 Stats Explanation (See SHOW STATUS docs for full details):
 
 Cache Hit:     Key_read / Key_read_requests. If small, consider increasing 
-               key_cache (current=$keybuffer)
+               key_buffer_size (current=$keybuffer)
 Opened tables: If large, consider increasing table_cache 
                (current=$VARS{table_cache})
 RRN:           Handler_read_rnd_next High if you are doing a lot of table scans.
@@ -430,7 +507,6 @@ TLW:           Table_locks_waited If high, consider optimising queries or
 SFJ:           Select_full_join Number of joins without keys (Should be 0). 
 SMP:           Sort_merge_passes If high, consider increasing sort_buffer 
                (current=$sortbuffer).
-
     };
     more($help);
     pause();
@@ -443,6 +519,51 @@ SMP:           Sort_merge_passes If high, consider increasing sort_buffer
 sub do_user {
     $opt_user = get_string("user");
     message("");
+    return 1;
+}
+
+#
+#  Change the current host displayed
+#
+sub do_host {
+    $opt_filterhost = get_string("host");
+    message("");
+    return 1;
+}
+
+#
+#  Change the current set of filters used for display
+#
+sub do_filter {
+    my $filteron = lc(get_string("filter type (u/h/d/c/s/i/?): "));
+    my $prompt = "enter perl regex for filter or return to clear: ";
+
+    if ($filteron eq 'u') {
+        $opt_filteruser = get_string($prompt);
+    } elsif ($filteron eq 'h') { 
+        $opt_filterhost = get_string($prompt);
+    } elsif ($filteron eq 'd') {
+        $opt_filterdb = get_string($prompt);
+    } elsif ($filteron eq 'c') {
+        $opt_filtercommand = get_string($prompt);
+    } elsif ($filteron eq 's') {
+        $opt_filterstate = get_string($prompt);
+    } elsif ($filteron eq 'i') {
+        $opt_filterinfo = get_string($prompt);
+    } elsif ($filteron eq '?') {
+        more("Curent display filters: 
+
+    user    =~ m/$opt_filteruser/i
+    host    =~ m/$opt_filterhost/i
+    db      =~ m/$opt_filterdb/i
+    command =~ m/$opt_filtercommand/i
+    state   =~ m/$opt_filterstate/i
+    info    =~ m/$opt_filterinfo/i
+        ");
+        pause();
+    } else {
+        return error("Invalid filter option");
+    }
     return 1;
 }
 
@@ -571,10 +692,8 @@ sub refresh_screen {
     $st_procs->execute() || die "Unable to execute show procs" . $dbh->errstr() . "\n";
     my @rows;
     while (my $row = $st_procs->fetchrow_hashref()) {
-        if ( !$opt_user || $opt_user eq $row->{User} ) {
-            if ($opt_idle || $row->{Command} ne "Sleep" ) {
-                push @rows, $row;
-            }
+        if ( filter_ok($row) ) {
+            push @rows, $row;
         }
     }
     my $rownum = 4;
@@ -610,6 +729,7 @@ sub refresh_screen {
         }
         $rownum++;
     }
+    addstr($rownum, 0, "---");
     move(0,0);
     refresh();
 }
@@ -833,6 +953,24 @@ sub friendly_bytes {
     return "${i}TB";
 }
 
+#  
+#  Return 1 if the specified row passes the current set of 
+#  dipslay filters.
+#
+sub filter_ok {
+    my $row = shift;
+    return 1 if
+        (!$opt_user          or $row->{User}    eq $opt_user) &&
+        (!$opt_filteruser    or $row->{User}    =~ /$opt_filteruser/i) &&
+        (!$opt_filterhost    or $row->{Host}    =~ /$opt_filterhost/i) &&
+        (!$opt_filterdb      or $row->{Db}      =~ /$opt_filterdb/i) &&
+        (!$opt_filtercommand or $row->{Command} =~ /$opt_filtercommand/i) &&
+        (!$opt_filterstate   or $row->{State}   =~ /$opt_filterstate/i) &&
+        (!$opt_filterinfo    or $row->{Info}    =~ /$opt_filterinfo/i) &&
+        ($opt_idle           or $row->{Command} ne "Sleep" );
+    return 0;
+}
+
 #
 #  Return the attribute that should be used to display a query based
 #  on how long the query is taking.  Returns 0 if attribute shouldn't 
@@ -916,12 +1054,18 @@ Usage: mtop [OPTIONS]
 
   --version                  Show version number and exit
   --help                     Show this screen and exit
-  --host {mysql_host}        Connect to the MySQL server on {mysql_host}
-  --dbuser {mysql_user}      Connect to the MySQL server as {mysql_user}
-  --password {mysqluser_pw}  Use {mysqluser_pw} when connecting
-  --seconds {refresh}        Refresh the screen each {refresh} seconds
+  --host={mysql_host}        Connect to the MySQL server on {mysql_host}
+  --dbuser={mysql_user}      Connect to the MySQL server as {mysql_user}
+  --password={mysqluser_pw}  Use {mysqluser_pw} when connecting
+  --seconds={refresh}        Refresh the screen each {refresh} seconds
   --[no]idle                 Display/don't display idle threads
-  --user {user}              Display threads for only {user}
+  --filter-user={regex}      Filter display based on user regular expression
+  --filter-host={regex}      Filter display based on host regular expression
+  --filter-db={regex}        Filter display based on db regular expression
+  --filter-command={regex}   Filter display based on command regular expression
+  --filter-state={regex}     Filter display based on state regular expression
+  --filter-info={regex}      Filter display based on info regular expression
+  --user={user}              Display threads for only {user}
   --manualrefresh            Wait for user input between refreshes
 
 All options can be truncated to their shortest unique abbreviation.
