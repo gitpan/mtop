@@ -1,0 +1,40 @@
+mtop 
+
+Shows the mysql commands consuming the greatest time.  By default, only 
+non-sleeping threads are shown, the --idle option shows idle threads.  
+While running several keys will affect the operation of mtop.  Hitting 
+'h' or '?' shows the available options.
+
+'mtop --help' shows usage
+
+See 'perldoc mtop' for for documenation.
+
+To install mtop, run the following:
+
+    perl Makefile.PL
+    make
+    make install
+
+Send bugs/comments to Marc Prewitt <mprewitt@chelsea.net>
+
+----------------------------------------------------------------------
+
+(C) 2001 Chelsea Networks/Marc Prewitt <mprewitt@chelsea.net>, under 
+the GNU GPL.
+
+mtop is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2, or (at your option)
+any later version.
+
+mtop is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You may have received a copy of the GNU General Public License
+along with mtop see the file COPYING.  If not, write to the
+Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+Boston, MA 02111-1307, USA.
+
+$Id: mtop.PL,v 1.21 2001/12/14 20:39:52 mprewitt Exp $
