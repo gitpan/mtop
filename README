@@ -23,6 +23,16 @@ or change the PREFIX line in Makefile.PL to customize install location.
 The default {install_prefix} is /usr/local which means mtop will be 
 installed in /usr/local/bin/.
 
+mtop requires the following perl modules:
+
+    Module        Available At
+    ------------  --------------------------------------------------------
+    Curses        http://www.cpan.org/authors/id/WPS
+    DBI           Distributed as Bundle::DBI: http://www.cpan.org/authors/id/TIMB
+    DBD::mysql    http://www.cpan.org/authors/id/JWIED
+    Getopt::Long  (Distributed with Perl 5)
+    Net::Domain   Part of libnet: http://www.cpan.org/authors/id/GBARR/
+
 Send bugs/comments to Marc Prewitt <mprewitt@chelsea.net>
 
 --------------------------------------------------------------------------
@@ -46,4 +56,4 @@ You should have received a copy of the GNU General Public License along
 with this program; if not, write to the Free Software Foundation, Inc.,
 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
-$Id: README,v 1.6 2002/01/06 18:27:24 mprewitt Exp $
+$Id: README,v 1.7 2002/07/03 20:22:15 mdprewitt Exp $

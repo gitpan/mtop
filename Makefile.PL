@@ -1,5 +1,5 @@
 #
-# $Id: Makefile.PL,v 1.14 2002/07/01 13:38:48 mdprewitt Exp $
+# $Id: Makefile.PL,v 1.16 2003/04/11 18:26:58 mdprewitt Exp $
 #  
 #  mtop Makefile
 #
@@ -48,11 +48,11 @@ my ( $y, $m, $d ) = (localtime(time))[5, 4, 3];
 $y += 1900;
 $m++;
 
-$m = "0$m" if $m < 9;
-$d = "0$d" if $d < 9;
+$m = "0$m" if $m <= 9;
+$d = "0$d" if $d <= 9;
 
 my $release = "$y$m$d";
-my $version = "0.6.2";
+my $version = "0.6.3";
 
 my %opts =  (
     ABSTRACT      => 'A top program for MySQL which shows the longest running queries.',
@@ -60,7 +60,7 @@ my %opts =  (
     NAME          => 'mtop',
     DISTNAME      => 'mtop',
     VERSION       => $version,
-    DEFINE        => '-DMAKEFILE_PL_VER=' . (qw$Revision: 1.14 $)[1],
+    DEFINE        => '-DMAKEFILE_PL_VER=' . (qw$Revision: 1.16 $)[1],
     dist          => { COMPRESS=>'gzip -9f', SUFFIX => 'gz',
                      ZIP=>'/usr/bin/zip',ZIPFLAGS=>'-rl'},
     INST_SCRIPT   => './blib/bin',
@@ -90,7 +90,7 @@ sub MY::processPL {
     chomp(my $text = $self->MM::processPL());
     my @lines = split(/\n/, $text);
     foreach (@lines) {
-        $_ .= " -v $version -r $release" if /\$\(PERL\)/;
+        $_ .= " -v $version -r $release" if /\$\(PERL(RUNINST)?\)/;
     }
     return join("\n", @lines);
 }

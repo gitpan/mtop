@@ -159,6 +159,18 @@ keyboard.  The screen will refresh automatically until a query is seen and then 
 further input.  An uppercase M will appear in the top right hand corner of the screen to 
 indicate that you are in this mode.
 <P></P></DL>
+<P>All options can be stored in initialization files.  Command line options override
+options stored in the initialization file(s).  The following files are checked for
+arguments: current direcotry .mtoprc, home directory .mtoprc, /usr/local/etc/mtoprc, 
+/etc/mtoprc.  Options in the former files override options in the later files.</P>
+<P>The format of the initialization file is one option per line.  Options are specified just
+as they would be on the command line.  They can be abbreviated and use the one or two hyphen
+syntax.  Comments and blank lines are ignored.  The following is an exmple .mtoprc file 
+which sets a user filter to user1 and sets the refresh rate to one second:</P>
+<PRE>
+    #  Only look at 'user1'
+    -fu user1
+    --seconds=1   # refresh every one seconds</PRE>
 <P>
 <HR>
 <H1><A NAME="setup">SETUP</A></H1>
@@ -194,7 +206,15 @@ in /usr/local/bin/.  To change this, run:</P>
 <PRE>
 
 or modify the PREFIX line in Makefile.PL.</PRE>
-<P>Requires DBD::mysql, Curses, and Net::Domain.</P>
+<P>Requires the following perl modules:</P>
+<PRE>
+    Module        Available At
+    ------------  --------------------------------------------------------
+    Curses        <A HREF="http://www.cpan.org/authors/id/WPS">http://www.cpan.org/authors/id/WPS</A>
+    DBI           Distributed as Bundle::DBI: <A HREF="http://www.cpan.org/authors/id/TIMB">http://www.cpan.org/authors/id/TIMB</A>
+    DBD::mysql    <A HREF="http://www.cpan.org/authors/id/JWIED">http://www.cpan.org/authors/id/JWIED</A>
+    Getopt::Long  (Distributed with Perl 5)
+    Net::Domain   Part of libnet: <A HREF="http://www.cpan.org/authors/id/GBARR/">http://www.cpan.org/authors/id/GBARR/</A></PRE>
 <P>
 <HR>
 <H1><A NAME="author">AUTHOR</A></H1>
@@ -217,14 +237,12 @@ after you are logged in.</P>
 <P>
 <HR>
 <H1><A NAME="todo">TODO</A></H1>
-<P>Feature to allow regex filters on other display columns.  Show
-current filters.</P>
 <P>Offer sorts by other columns</P>
 <P>For the 'More:' paging, it would be nice to support 'Less' behaviour.</P>
 <P>Add support for saving commandline opts in ~/.mtop</P>
 <P>Add 'n' command and properly calculate number of lines on screen.</P>
 <PRE>
-    $Id: mtop.PL,v 1.49 2002/06/30 03:18:34 mdprewitt Exp $</PRE>
+    $Id: mtop.PL,v 1.53 2002/08/19 18:49:48 mdprewitt Exp $</PRE>
 
 </BODY>
 

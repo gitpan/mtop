@@ -39,7 +39,7 @@ $Config{'startperl'}
 
 print OUT <<'!NO!SUBS!';
 #
-# $Id: mtop.PL,v 1.49 2002/06/30 03:18:34 mdprewitt Exp $
+# $Id: mtop.PL,v 1.56 2003/04/11 19:40:11 mdprewitt Exp $
 #
 # mtop - Shows the MySQL commands consuming the greatest time
 # Copyright (C) 2002 Marc Prewitt/Chelsea Networks <mprewitt@chelsea.net>
@@ -110,15 +110,95 @@ The following keys are active while mtop is running:
     z - zoom in on a process; show sql statement detail 
     f - flush stats (reset show status variables)
     t - show mysqld stats (show status/mysqladmin ext)
+    T - show short/important status
     v - show mysqld variables (show variables/mysqladmin vars)
     r - show replication status for master/slaves
 
+B<Main Screen>
+
+The main query screen shows the following information as well as the currently
+active queries (explanations are from the MySQL online manual and 
+references refer to the section in the manual where the explanation came from):
+
+=over 4
+
+=item n Threads: running, cached
+
+The B<n> Threads represents how many threads the mysqld has allocated.  One
+thread is allocated for each user connection.  Additional threads are allocated
+for replication.
+
+=item    Queries/slow: Total queries / Total slow queries
+
+The first number is the total number of queries sent to the server
+since the last 'flush status' or since server start.  The second
+number is the number of queries that have taken more than 
+long_query_time. See section 4.9.5 The Slow Query Log. 
+
+=item    Cache Hit: Cache hit ratio
+
+This is the percentage of times a key read is handled from the 
+key buffer cache.  See section 4.5.7.4 B<SHOW VARIABLES> of 
+the MySQL manual for more information.
+
+=item    Opened tables: tables opened
+
+MySQL has a cache for open tables.  If 'opened tables' is high, your cache
+may be too small.  Look at the MySQL manual section: B<5.4.7 How MySQL Opens 
+and Closes Tables> for further information.
+
+=item    RRN: Handler_read_rnd_next
+
+Number of requests to read the next row in the datafile. This will be 
+high if you are doing a lot of table scans. Generally this suggests 
+that your tables are not properly indexed or that your queries are 
+not written to take advantage of the indexes you have. (4.5.7.3)
+
+=item    TLW: Table_locks_waited
+
+Number of times a table lock could not be acquired immediately and a 
+wait was needed. If this is high, and you have performance problems, 
+you should first optimise your queries, and then either split your 
+table(s) or use replication. Available after 3.23.33.  (4.5.7.3)
+
+=item    SFJ: Select_full_join
+
+Number of joins without keys (If this is not 0, you should carefully 
+check the indexes of your tables). (4.5.7.3)
+
+=item    SMP: Sort_merge_passes
+
+Number of merges passes the sort algoritm have had to do. If this value 
+is large you should consider increasing sort_buffer. (4.5.7.3)
+
+=item    QPS: Questions per second
+
+The total number of sql commands handled by the MySQL server since startup
+or the last B<flush status> command.
+
+=back
+
 B<Statistics/Variables>
 
-When viewing the I<stats> screen, the screen will refresh until a key is 
+When viewing the I<stats> screen (B<t>), the screen will refresh until a key is 
 pressed at which point you will return to the main screen.  The bottom of the 
-I<stats> screen is denoted with a line containing B<--->, if you do not see
+I<stats> screen is denoted with a line containing B<--->.  If you do not see
 that line, resize your screen until you do.
+
+The statistics screen has the following format:
+
+    Stat:      total [avg per sec / instant per sec ]
+
+For example:
+
+    Questions:     720,672 [30/12]
+
+The I<short/important> status screen is a list of recommendations from the
+MySQL manual.  
+
+The first number is the total since startup or the last 'flush status'. 
+The second number is the number per second since startup or flush.  The
+last is the number per second since the last screen refresh.  
 
 The I<variables> screen only shows the information once and returns to the main 
 screen as the variables do not change after server startup.
@@ -209,6 +289,20 @@ indicate that you are in this mode.
 
 =back
 
+All options can be stored in initialization files.  Command line options override
+options stored in the initialization file(s).  The following files are checked for
+arguments: current direcotry .mtoprc, home directory .mtoprc, /usr/local/etc/mtoprc, 
+/etc/mtoprc.  Options in the former files override options in the later files.
+
+The format of the initialization file is one option per line.  Options are specified just
+as they would be on the command line.  They can be abbreviated and use the one or two hyphen
+syntax.  Comments and blank lines are ignored.  The following is an exmple .mtoprc file 
+which sets a user filter to user1 and sets the refresh rate to one second:
+
+    #  Only look at 'user1'
+    -fu user1
+    --seconds=1   # refresh every one seconds
+
 =head1 SETUP
 
 The most convenient way to setup your system to use B<mtop> is to create a database user
@@ -247,7 +341,15 @@ in /usr/local/bin/.  To change this, run:
     
 or modify the PREFIX line in Makefile.PL.
 
-Requires DBD::mysql, Curses, and Net::Domain.
+Requires the following perl modules:
+
+    Module        Available At
+    ------------  --------------------------------------------------------
+    Curses        http://www.cpan.org/authors/id/WPS
+    DBI           Distributed as Bundle::DBI: http://www.cpan.org/authors/id/TIMB
+    DBD::mysql    http://www.cpan.org/authors/id/JWIED
+    Getopt::Long  (Distributed with Perl 5)
+    Net::Domain   Part of libnet: http://www.cpan.org/authors/id/GBARR/
 
 =head1 AUTHOR
 
@@ -258,7 +360,16 @@ mtop comes with ABSOLUTELY NO WARRANTY. This is free software, and you are
 welcome to redistribute it under certain conditions; see the COPYING file 
 for details.
 
-=head1 BUGS
+=head1 KNOWN BUGS
+
+The cache hit ratio may look very low if your server receives more than 
+4 billion key_read_requests.  This is due to a roll-over condition.  If that
+number exceeds 4 billion and change, it rolls over to 1.  The cache 
+hit ratio is calculated as: 100 - (key_reads/key_read_requests) * 100.
+
+If you are really trying to focus on the cache hit ratio, flush the status
+variables with the mtop B<f> command to reset both the key_reads and
+key_read_requests.
 
 Win2K telnet.exe - If you are using the Windows 2000 telnet program, it defaults
 to ansi mode which doesn't work well with curses (in my testing on Solaris 8).  
@@ -272,18 +383,13 @@ after you are logged in.
 
 =head1 TODO
 
-Feature to allow regex filters on other display columns.  Show
-current filters.
-
 Offer sorts by other columns
 
 For the 'More:' paging, it would be nice to support 'Less' behaviour.
 
-Add support for saving commandline opts in ~/.mtop
-
 Add 'n' command and properly calculate number of lines on screen.
 
-    $Id: mtop.PL,v 1.49 2002/06/30 03:18:34 mdprewitt Exp $
+    $Id: mtop.PL,v 1.56 2003/04/11 19:40:11 mdprewitt Exp $
 
 =cut
 
@@ -352,11 +458,12 @@ my $SORT = DESC;
         Extra => -1
 );
 
-my %PROCS;   # place to save proc info between refreshes
+my %PROCS;       # place to save proc info between refreshes
 
-my %STATS;  # 'show status' info
+my %STATS;       # 'show status' info
+my %PREV_STATS;  # info from previous 'show status'
 
-my %VARS;    # 'show variables' info
+my %VARS;        # 'show variables' info
 
 # dbh's to other databases format is 
 # $DB{db_name}
@@ -364,6 +471,11 @@ my %VARS;    # 'show variables' info
 my %DB;    
 
 init_screen();
+
+GetFileToArgv(".mtoprc")                if -e ".mtoprc";
+GetFileToArgv("$ENV{HOME}/.mtoprc")     if $ENV{HOME} && -e "$ENV{HOME}/.mtoprc";
+GetFileToArgv("/usr/local/etc/mtoprc")  if -e "/usr/local/etc/mtoprc";
+GetFileToArgv("/etc/mtoprc")            if -e "/etc/mtoprc";
 
 GetOptions(
         'debug:i'             => \$DEBUG,
@@ -459,6 +571,8 @@ while (1) {
         $refresh = $opt_user = "";
     } elsif ($key eq "e") {
         $refresh = do_explain();
+    } elsif ($key eq "T") {
+        $refresh = do_admin_stats();
     } elsif ($key eq "t") {
         $refresh = do_stats();
     } elsif ($key eq "v") {
@@ -557,6 +671,11 @@ sub do_stats {
             my $val2 = $STATS{$keys[$i+$mid]};
             $val1 = commify($val1) if $val1 =~ /^\d+$/;
             $val2 = commify($val2) if $val2 =~ /^\d+$/;
+            $val1 .= " [" .  int($STATS{$keys[$i]}/ $STATS{Uptime});
+            $val2 .= " [" .  int($STATS{$keys[$i+$mid]}/ $STATS{Uptime});
+
+            $val1 .= "/" .  int(($STATS{$keys[$i]}-$PREV_STATS{$keys[$i]}) / $opt_seconds) . "]";
+            $val2 .= "/" .  int(($STATS{$keys[$i+$mid]}-$PREV_STATS{$keys[$i+$mid]}) / $opt_seconds) . "]";
             my $spaces1 = " " x ($SCREEN_WIDTH/2 - length($val1) - length($keys[$i]) - 4);
             my $spaces2 = " " x ($SCREEN_WIDTH/2 - length($val2) - length($keys[$i+$mid]) - 4);
             my $line = "$keys[$i]: $spaces1$val1";
@@ -565,6 +684,48 @@ sub do_stats {
         }
         addstr($i, 0, "---");
         message("Press any key to return") 
+    } while !sleep_or_key($opt_seconds) || getch_nb() == -1;
+    return 1;
+}
+
+#
+#  Show important stats like:
+#   Cache Hit Ratio
+#   Created_tmp_tables vs Created_tmp_disk_tables
+#
+sub do_admin_stats {
+    my @keys = sort keys %STATS;
+    my $mid = int(scalar @keys / 2);
+
+    move(0,0);
+    clrtobot();
+
+    do {
+        if ($WINDOW_RESIZE) {
+            handle_resize();
+        }
+
+        my $chit = _getCacheHit(\%STATS);
+        my $queries = $STATS{Questions};
+        more(
+                "Recommendations below come from various places in the MySQL manual.",
+                " ",
+                "Cache Hit Ratio: " . sprintf("%2.2f%", $chit),
+                $chit < 99 ? " (Consider increasing key_buffer_size until cache ratio > 99%) " : "",
+                "Tmp tables converted to disk: " . sprintf("%2.2f%", 
+                    100*($STATS{Created_tmp_disk_tables}/ ($STATS{Created_tmp_tables} || 1))),
+                " (Increase tmp_table_size to decrease this)",
+                "Number of joins without keys (Select full joins): " . $STATS{Select_full_join},
+                $STATS{Select_full_join} ? " (Look for joins which don't use indexes until SFJ = 0) " : "",
+                $STATS{Slow_queries} > 0 ? "Slow queries: $STATS{Slow_queries} (Look in slow query log)" : "",
+                #  These next numbers aren't really correct, we really need to know the 
+                #  number of reads, not queries.
+                "Full index scans: " . sprintf("%2.2f%", $STATS{Handler_read_first} / $queries),
+                "Index utilization: " . sprintf("%2.2f%", $STATS{Handler_read_key} / $queries),
+                "Range or Table Scans: ". sprintf("%2.2f%", $STATS{Handler_read_next} / $queries),
+                "---"
+                );
+
     } while !sleep_or_key($opt_seconds) || getch_nb() == -1;
     return 1;
 }
@@ -595,6 +756,7 @@ i - toggle all/non-Sleeping process display
 o - reverse the sort order
 e - explain a process; show query optimizer info
 t - show mysqld stats (show status/mysqladmin ext)
+T - show mysqld important stats
 v - show mysqld variables (show variables/mysqladmin vars)
 z - zoom in on a process, show sql statement detail 
 r - show replication status for master/slaves
@@ -742,11 +904,11 @@ sub do_replication {
             last;
         }
 
-        my ($master_pos, @info) = repl_getmaster();
+        my ($master_pos, $master_file, @info) = repl_getmaster();
 
         push @info, repl_get_local_slave();
 
-        push @info, repl_get_remote_slave($master_pos);
+        push @info, repl_get_remote_slave($master_pos, $master_file);
         
         more(@info);
 
@@ -763,7 +925,7 @@ sub do_replication {
 #  strings of information about the master status.
 #
 sub repl_getmaster {
-    my ($master_pos, @info);
+    my ($master_pos, $master_file, @info);
 
     $st_master_stat->execute() or 
         push @info, "Unable to execute SHOW MASTER STATUS [" .  $dbh->errstr() . "]" and 
@@ -772,6 +934,7 @@ sub repl_getmaster {
     while (my $row = $st_master_stat->fetchrow_hashref()) {
         if ($row->{File}) {
             $master_pos = $row->{Position};
+            $master_file = $row->{File};
             push @info, "Master:   $row->{File}:$row->{Position}";
             push @info, "  Do DB:  $row->{Binlog_do_db}" if $row->{Binlog_do_db};
             push @info, "  Ignore: $row->{Binlog_ignore_db}" if $row->{Binlog_ignore_db};
@@ -780,7 +943,7 @@ sub repl_getmaster {
         }
         push @info, " ";
     }
-    return $master_pos, @info;
+    return $master_pos, $master_file, @info;
 }
 
 #
@@ -811,7 +974,7 @@ sub repl_get_local_slave {
 
 #
 #  Reset slave replication by skipping ahead in the binlog.  
-#  This should really look at the query and table structure and
+#  TODO: This should really look at the query and table structure and
 #  figure out if the counter needs to be set to 1 or 2.
 #
 sub skip_slave {
@@ -852,6 +1015,7 @@ sub skip_slave_until_running {
 #
 sub repl_get_remote_slave {
     my $master_pos = shift;
+    my $master_file = shift;
     my @info;
 
     $st_procs->execute() or
@@ -873,7 +1037,16 @@ sub repl_get_remote_slave {
                     push @info, "  Ignore: $row->{Replicate_ignore_db}" if $row->{Replicate_ignore_db};
                     push @info, "  Master: $row->{Master_User}\@$row->{Master_Host}:$row->{Master_Port} Retry: $row->{Connect_retry}";
                     push @info, "  Last Error: [$row->{Laster_errno}] $row->{Last_error}" if $row->{Last_error};
-                    push @info, "  Offset from Master: " . ($master_pos - $row->{Pos});
+                    my $offset;
+                    if ($row->{Log_File} eq $master_file) {
+                        $offset = $master_pos - $row->{Pos};
+                        # Don't show negative offset, we checked the master before checking
+                        # the slave so we might get a later slave position.
+                        $offset = 0 if $offset < 0;  
+                    } else {
+                        $offset = "> $master_pos";
+                    }
+                    push @info, "  Offset from Master: " . $offset;
                     push @info, " ";
                 }
             } else {
@@ -906,10 +1079,12 @@ sub refresh_vars {
 
 # 
 #  Does a 'show status' and updates %STATS with the results
+#  Saves previous run in %PREV_STATS.  
 #
 sub refresh_stats {
     $st_status->execute() || die "Unable to execute show status" . $dbh->errstr() . "\n";
     while (my $row = $st_status->fetchrow_hashref()) {
+        $PREV_STATS{$row->{Variable_name}} = $STATS{$row->{Variable_name}};
         $STATS{$row->{Variable_name}} = $row->{Value};
     }
 }
@@ -938,11 +1113,9 @@ sub header() {
     $min   = "0$min"   if $min < 10;
     $hours = " $hours" if $hours < 10;
     
-    my $krr = $STATS{Key_read_requests} || 1;
-    my $kr  = $STATS{Key_reads};
-    my $chit = 100 - ($kr/$krr) * 100;
-    $chit = sprintf("%2.2f",$chit);
+    my $chit = sprintf("%2.2f", _getCacheHit(\%STATS));
 
+    my $qps         = friendly_number(($STATS{Questions} - $PREV_STATS{Questions})/$opt_seconds);
     my $questions   = friendly_number($STATS{Questions}, 1);
     my $slow        = friendly_number($STATS{Slow_queries}, 1);
     my $open_tables = friendly_number($STATS{Opened_tables}, 1);
@@ -954,7 +1127,7 @@ sub header() {
     addstr(0,0, $load_avg . " mysqld $VARS{version} up $days day(s), $hours:$min hrs");
     addstr(1,0, "$STATS{Threads_connected} threads: $STATS{Threads_running} running, $STATS{Threads_cached} cached. Queries/slow: $questions/$slow Cache Hit: $chit%");
 
-    addstr(2,0, "Opened tables: $open_tables  RRN: $rrn  TLW: $tlw  SFJ: $sfj  SMP: $smp$mysql_memory");
+    addstr(2,0, "Opened tables: $open_tables  RRN: $rrn  TLW: $tlw  SFJ: $sfj  SMP: $smp  QPS: $qps$mysql_memory");
     if ($opt_manualrefresh) {
         standout();
         addstr(0,$SCREEN_WIDTH-1, "M");
@@ -1123,6 +1296,7 @@ sub more {
             }
         }
     }
+    refresh();
 }
 
 #
@@ -1323,11 +1497,11 @@ sub query_color {
 #
 sub init_screen {
     $CURSES_INIT = 1 if initscr();      # start screen
-    start_color();
     cbreak(); 
     getmaxyx($SCREEN_HEIGHT, $SCREEN_WIDTH);
 
     if (has_colors()) {
+        start_color();
         init_pair(1, COLOR_RED, COLOR_BLACK);
         init_pair(2, COLOR_YELLOW, COLOR_BLACK);
         init_pair(3, COLOR_MAGENTA, COLOR_BLACK);
@@ -1487,6 +1661,20 @@ sub cleanup_win {
     }
 }
 
+sub GetFileToArgv {
+    my $file = shift;
+    open(FL, $file) || return error("Unable to open '$file' [$!]");
+    while (<FL>) {
+        chomp();
+        # stript comments and leading blanks
+        s/#.*//;
+        s/^\s+//;
+
+        next if /^\s*$/;  # ignore blank lines
+        unshift @ARGV, split(/\s+/);
+    }
+}
+
 #
 #  If we're in the debugger, don't do this!
 #
@@ -1529,6 +1717,14 @@ sub _getStackTrace {
         $calling_sub = $level[3];
     }
     return $trace;
+}
+
+sub _getCacheHit {
+    my $stats = shift;
+
+    my $krr = $stats->{Key_read_requests} || 1;
+    my $kr  = $stats->{Key_reads};
+    return 100 - ($kr/$krr) * 100;
 }
 
 END {
