@@ -1,5 +1,5 @@
 #
-# $Id: Makefile.PL,v 1.16 2003/04/11 18:26:58 mdprewitt Exp $
+# $Id: Makefile.PL,v 1.18 2003/06/20 14:21:19 mdprewitt Exp $
 #  
 #  mtop Makefile
 #
@@ -52,7 +52,7 @@ $m = "0$m" if $m <= 9;
 $d = "0$d" if $d <= 9;
 
 my $release = "$y$m$d";
-my $version = "0.6.3";
+my $version = "0.6.4";
 
 my %opts =  (
     ABSTRACT      => 'A top program for MySQL which shows the longest running queries.',
@@ -60,12 +60,12 @@ my %opts =  (
     NAME          => 'mtop',
     DISTNAME      => 'mtop',
     VERSION       => $version,
-    DEFINE        => '-DMAKEFILE_PL_VER=' . (qw$Revision: 1.16 $)[1],
+    DEFINE        => '-DMAKEFILE_PL_VER=' . (qw$Revision: 1.18 $)[1],
     dist          => { COMPRESS=>'gzip -9f', SUFFIX => 'gz',
                      ZIP=>'/usr/bin/zip',ZIPFLAGS=>'-rl'},
     INST_SCRIPT   => './blib/bin',
-    PL_FILES      => { 'mtop.PL'=> 'mtop' },
-    EXE_FILES     => [ 'mtop' ],
+    PL_FILES      => { 'mtop.PL'=> 'mtop', 'mkill.PL'=>'mkill' },
+    EXE_FILES     => [ 'mtop', 'mkill' ],
     INSTALLDIRS   => 'perl',  # Ensures that PREFIX is used instead of SITEPREFIX
     PREREQ_PM     => { 'Curses' => 0,
                      'Getopt::Long' => 0,

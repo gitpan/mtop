@@ -39,7 +39,7 @@ $Config{'startperl'}
 
 print OUT <<'!NO!SUBS!';
 #
-# $Id: mtop.PL,v 1.56 2003/04/11 19:40:11 mdprewitt Exp $
+# $Id: mtop.PL,v 1.57 2003/06/13 17:58:08 mdprewitt Exp $
 #
 # mtop - Shows the MySQL commands consuming the greatest time
 # Copyright (C) 2002 Marc Prewitt/Chelsea Networks <mprewitt@chelsea.net>
@@ -70,7 +70,8 @@ B<mtop> - Shows top mysql threads
         [--password={mysqluser_pw}] [--seconds={refresh}] [--[no]idle] 
         [--filter-user={regex}] [--filter-host={regex}] [--filter-db={regex}]
         [--filter-command={regex}] [--filter-state={regex}] [--filter-info={{regex}}]
-        [--user={user}] [--manualrefresh]
+        [--user={user}] [--manualrefresh] [--slow={seconds}] [--vs|veryslow={seconds}]
+        [--vvs|veryveryslow={seconds}]
 
     mtop --help
 
@@ -128,7 +129,7 @@ The B<n> Threads represents how many threads the mysqld has allocated.  One
 thread is allocated for each user connection.  Additional threads are allocated
 for replication.
 
-=item    Queries/slow: Total queries / Total slow queries
+=item    Queries/slow: Total queries / Total SLOW QUERIES
 
 The first number is the total number of queries sent to the server
 since the last 'flush status' or since server start.  The second
@@ -241,9 +242,24 @@ By default, the user 'mysqltop' is used to connect to the database.  Specify an 
 By default, there is no password associated with the mysqltop
 user, specify a password with this option.
 
-=item -s {refresh}, --seconds={refresh}
+=item -se {refresh}, --seconds={refresh}
 
 The default screen refresh is 5 seconds.
+
+=item -sl {seconds}, --slow={seconds}
+
+The number of seconds before a slow query is highlighted.  The default is
+the server's long_query configuration variable.
+
+=item -vs {seconds}, --veryslow={seconds}
+
+The number of seconds before a very slow query is highlighted.  The default is
+the the --slow option * 2.
+
+=item -vvs {seconds}, --veryveryslow={seconds}
+
+The number of seconds before a very very slow query is highlighted.  The default is
+the the --slow option * 4.
 
 =item -i, --[no]idle 
 
@@ -389,7 +405,7 @@ For the 'More:' paging, it would be nice to support 'Less' behaviour.
 
 Add 'n' command and properly calculate number of lines on screen.
 
-    $Id: mtop.PL,v 1.56 2003/04/11 19:40:11 mdprewitt Exp $
+    $Id: mtop.PL,v 1.57 2003/06/13 17:58:08 mdprewitt Exp $
 
 =cut
 
@@ -419,6 +435,10 @@ my $opt_user;
 my $opt_version;
 my $opt_help;
 my $opt_manualrefresh;
+
+my $opt_slow;
+my $opt_veryslow;
+my $opt_veryveryslow;
 
 my $opt_filterhost;
 my $opt_filteruser;
@@ -486,6 +506,9 @@ GetOptions(
         'user:s'              => \$opt_user,
         'password:s'          => \$opt_passwd,
         'seconds:i'           => \$opt_seconds,
+        'slow:i'              => \$opt_slow,
+        'vs|veryslow:i'       => \$opt_veryslow,
+        'vvs|veryveryslow:i'  => \$opt_veryveryslow,
         'fu|filter-user:s'    => \$opt_filteruser,
         'fh|filter-host:s'    => \$opt_filterhost,
         'fd|filter-db:s'      => \$opt_filterdb,
@@ -540,6 +563,9 @@ my $reset = time + $opt_seconds;
 refresh_vars();
 refresh_screen();
 
+$opt_slow          = $VARS{long_query_time}  unless $opt_slow;
+$opt_veryslow      = $opt_slow * 2           unless $opt_veryslow;
+$opt_veryveryslow  = $opt_slow * 4           unless $opt_veryveryslow;
 
 while (1) {
     my $key;
@@ -1480,11 +1506,11 @@ sub query_color {
     my $sth = shift;
     if ($sth->{Command} eq "Query") {
         my $time = $sth->{Time};
-        if ($time > $VARS{long_query_time} * 2) {
+        if ($time > $opt_veryveryslow) {
             return $REALLY_SLOW_COLOR;
-        } elsif ($time > $VARS{long_query_time}) {
+        } elsif ($time > $opt_veryslow) {
             return $SLOW_COLOR;
-        } elsif ($time > $VARS{long_query_time} / 2) {
+        } elsif ($time > $opt_slow) {
             return $ALMOST_SLOW_COLOR;
         }
     }

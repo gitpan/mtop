@@ -1,3 +1,44 @@
+Release v0-6-4
+==============
+
+mtop
+----
+New options to control how many seconds elapse before a slow query is
+highlighted.
+
+mkill
+----
+Watch and kill long running queries.
+
+Release v0-6-3
+==============
+
+mtop
+----
+
+Fixed negative slave offsets.  Just show 0.  Since the slave position
+is checked after the master position, it might be a bit ahead.
+
+Fixed slave offsets where the master and slave are on different
+logfiles.  Instead of showing a wierd number, show '> master position'
+since we know that we're at least that far behind plus any other
+intervening log files.
+
+Fixed Mac OSX curses bugs.
+
+New Features:
+
+ - Added ability to save options in a .mtoprc configuration file.
+
+ - Added sysadmin recommendation page ('T').
+
+ - Added queries/second to main header.
+
+ - Added per second info to stats screen.
+
+Added documentation for new features.  Expanded documentation on the
+header section.
+
 Release v0-6-2
 ==============
 
