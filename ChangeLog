@@ -1,3 +1,19 @@
+Release v0-6-1
+==============
+
+mtop
+----
+
+
+Added replication status page (screen command 'r').  This page updates
+similar to the main screen.  Three types of replication status are
+shown on this page: 1) master servers running on this machine, 2) slave
+servers running on this machine, 3) slave servers attached to this 
+master.
+
+Changed debugging from a flag to a level.  Moved dbh connection 
+into function which caches the dbh's.
+
 Release v0-5-1
 ==============
 

@@ -39,7 +39,7 @@ $Config{'startperl'}
 
 print OUT <<'!NO!SUBS!';
 #
-# $Id: mtop.PL,v 1.43 2002/03/07 03:54:11 mdprewitt Exp $
+# $Id: mtop.PL,v 1.46 2002/05/03 13:32:47 mdprewitt Exp $
 #
 # mtop - Shows the MySQL commands consuming the greatest time
 # Copyright (C) 2002 Marc Prewitt/Chelsea Networks <mprewitt@chelsea.net>
@@ -92,8 +92,9 @@ The following keys are active while mtop is running:
 
     q - quit
     ? - help
-    f - flush status
-    k - kill processes; send a kill to a list of ids
+
+    Filtering/display
+
     s - change the number of seconds to delay between updates
     m - toggle manual refresh mode on/off
     d - filter display with regular expression (user/host/db/command/state/info)
@@ -101,10 +102,18 @@ The following keys are active while mtop is running:
     u - display process for only one user
     i - toggle all/non-Sleeping process display
     o - reverse the sort order
+
+    Control/Detail
+
+    k - kill processes; send a kill to a list of ids
     e - explain a process; show query optimizer info
+    z - zoom in on a process; show sql statement detail 
+    f - flush stats (reset show status variables)
     t - show mysqld stats (show status/mysqladmin ext)
     v - show mysqld variables (show variables/mysqladmin vars)
-    z - zoom in on a process; show sql statement detail 
+    r - show replication status for master/slaves
+
+B<Statistics/Variables>
 
 When viewing the I<stats> screen, the screen will refresh until a key is 
 pressed at which point you will return to the main screen.  The bottom of the 
@@ -113,6 +122,16 @@ that line, resize your screen until you do.
 
 The I<variables> screen only shows the information once and returns to the main 
 screen as the variables do not change after server startup.
+
+B<Replication>
+
+The replication monitor screen looks for a master or slave server running on the currently
+monitored mysqld.  If a master server is found, it then tries to connect to each slave
+connected to the master.  Replication is shown for all masters and slaves found.
+Offsets from the master for each of the slaves is shown.  Note: the offset may be less
+than zero because the slave position is checked after the master position.  The offset
+shown is the number of queries in the binlog that the slave has to process before
+being caught up with the master.
 
 =head1 OPTIONS
 
@@ -266,7 +285,7 @@ Add support for saving commandline opts in ~/.mtop
 
 Add 'n' command and properly calculate number of lines on screen.
 
-    $Id: mtop.PL,v 1.43 2002/03/07 03:54:11 mdprewitt Exp $
+    $Id: mtop.PL,v 1.46 2002/05/03 13:32:47 mdprewitt Exp $
 
 =cut
 
@@ -302,6 +321,8 @@ my $opt_filterdb;
 my $opt_filtercommand;
 my $opt_filterstate;
 my $opt_filterinfo;
+
+my $DEBUG;
 
 my $PROMPT_ROW = 3;
 my $SORT = DESC;
@@ -344,6 +365,7 @@ my %VARS;    # 'show variables' info
 my %DB;    
 
 GetOptions(
+        'debug:i'             => \$DEBUG,
         'h|host:s'            => \$opt_host,
         'dbuser:s'            => \$opt_dbuser,
         'dbport:i'            => \$opt_dbport,
@@ -370,13 +392,14 @@ usage() if $opt_help;
 
 my $dbh;
 my $dsn = "DBI:mysql:database=test";
-my $dsn_opts;
-$dsn_opts = ";host=$opt_host" if $opt_host;
-$dsn_opts .= ";port=$opt_dbport" if $opt_dbport;
-$dsn_opts .= ";mysql_socket=$opt_dbsocket" if $opt_dbsocket;
+my %dsn_opts;
+$dsn_opts{host}         = "$opt_host"     if $opt_host;
+$dsn_opts{port}         = "$opt_dbport"   if $opt_dbport;
+$dsn_opts{mysql_socket} = "$opt_dbsocket" if $opt_dbsocket;
 
 
-$dbh = DBI->connect("$dsn$dsn_opts", $opt_dbuser, $opt_passwd, {PrintError=>0}) || 
+#$dbh = DBI->connect($dsn . get_dsnoptstr(%dsn_opts), $opt_dbuser, $opt_passwd, {PrintError=>0}) || 
+$dbh = get_dbh('test', %dsn_opts) ||
     die "Unable to connect to mysql [", $DBI::errstr, "]\n";
 
 my $st_procs   = $dbh->prepare("show full processlist");
@@ -384,6 +407,8 @@ my $st_status  = $dbh->prepare("show status");
 my $st_kill    = $dbh->prepare("kill ?");
 my $st_flush   = $dbh->prepare("flush status");
 my $st_vars    = $dbh->prepare("show variables");
+my $st_master_stat = $dbh->prepare("show master status");
+my $st_slave_stat = $dbh->prepare("show slave status");
 
 my $CURSES_INIT;
 my $SCREEN_WIDTH;
@@ -443,6 +468,8 @@ while (1) {
         $refresh = 1;
     } elsif ($key eq "z") {
         $refresh = do_zoom();
+    } elsif ($key eq "r") {
+        $refresh = do_replication();
     } elsif ($key eq "?") {
         $refresh = do_help();
     } else {
@@ -568,6 +595,7 @@ e - explain a process; show query optimizer info
 t - show mysqld stats (show status/mysqladmin ext)
 v - show mysqld variables (show variables/mysqladmin vars)
 z - zoom in on a process, show sql statement detail 
+r - show replication status for master/slaves
 
 Stats Explanation (See SHOW STATUS docs for full details):
 
@@ -687,6 +715,123 @@ sub do_kill {
     }
     message("");
     return 1;
+}
+
+#
+#  Show replication status for this host.  Show local masters
+#  and slaves running and also connect to any connected remote
+#  slaves to get their status.
+#
+sub do_replication {
+    do {
+        if ($WINDOW_RESIZE) {
+            handle_resize();
+        }
+
+        my ($master_pos, @info) = repl_getmaster();
+
+        push @info, repl_get_local_slave();
+
+        push @info, repl_get_remote_slave($master_pos);
+        
+        more(@info);
+
+        message("Press any key to return") 
+    } while !sleep_or_key($opt_seconds) || getch_nb() == -1;
+
+    return 1;
+}
+
+#
+#  Return an the current master position and array containing 
+#  strings of information about the master status.
+#
+sub repl_getmaster {
+    my ($master_pos, @info);
+
+    $st_master_stat->execute() or 
+        push @info, "Unable to execute SHOW MASTER STATUS [" .  $dbh->errstr() . "]" and 
+        return $master_pos, @info;
+
+    while (my $row = $st_master_stat->fetchrow_hashref()) {
+        if ($row->{File}) {
+            $master_pos = $row->{Position};
+            push @info, "Master:   $row->{File}:$row->{Position}";
+            push @info, "  Do DB:  $row->{Binlog_do_db}" if $row->{Binlog_do_db};
+            push @info, "  Ignore: $row->{Binlog_ignore_db}" if $row->{Binlog_ignore_db};
+        } else {
+            push @info, "Master:   Not configured";
+        }
+        push @info, " ";
+    }
+    return $master_pos, @info;
+}
+
+#
+#  Return an array of strings with info about the local
+#  slaves.
+#
+sub repl_get_local_slave {
+    my @info;
+
+    $st_slave_stat->execute() or 
+        push @info, "Unable to execute SHOW SLAVE STATUS [" .  $dbh->errstr() . "]" and
+        return @info;
+
+    my $local_slaves = 0;
+    while (my $row = $st_slave_stat->fetchrow_hashref()) {
+        if ($row->{Master_Host}) {
+            push @info, "Local Slaves ", " " unless $local_slaves++;
+            push @info, "Slave:    $row->{Log_File}:$row->{Pos} Running: $row->{Slave_Running}";
+            push @info, "  Do DB:  $row->{Replicate_do_db}" if $row->{Replicate_do_db};
+            push @info, "  Ignore: $row->{Replicate_ignore_db}" if $row->{Replicate_ignore_db};
+            push @info, "  Master: $row->{Master_User}\@$row->{Master_Host}:$row->{Master_Port} Retry: $row->{Connect_retry}";
+            push @info, "  Last Error: [$row->{Laster_errno}] $row->{Last_error}" if $row->{Last_error};
+        }
+        push @info, " ";
+    }
+    return @info;
+}
+
+#
+#  Return an array of strings with info about the remote slaves
+#  connected to the master.  The slave binlog offset is calculated
+#  from the provided $master_pos variable.
+#
+sub repl_get_remote_slave {
+    my $master_pos = shift;
+    my @info;
+
+    $st_procs->execute() or
+        push @info, "Unable to execute SHOW PROCESSLIST trying to find slaves: " . $dbh->errstr() and
+        return @info;
+
+    my $local_slaves = 0;
+    while (my $masterrow = $st_procs->fetchrow_hashref()) {
+        if ($masterrow->{Command} eq "Binlog Dump") {
+            push @info, "Remote Slaves ", " " unless $local_slaves++;
+            my $host = $masterrow->{Host};
+            if (my $dbh = get_dbh('test', %dsn_opts, host=>$host)) {
+            my $sth = $dbh->prepare("show slave status");
+                $sth->execute() || 
+                    push @info, "Unable to connect to $host for slave status" . $dbh->errstr();
+                while (my $row = $sth->fetchrow_hashref()) {
+                    push @info, "$host: $row->{Log_File}:$row->{Pos} Running: $row->{Slave_Running}";
+                    push @info, "  Do DB:  $row->{Replicate_do_db}" if $row->{Replicate_do_db};
+                    push @info, "  Ignore: $row->{Replicate_ignore_db}" if $row->{Replicate_ignore_db};
+                    push @info, "  Master: $row->{Master_User}\@$row->{Master_Host}:$row->{Master_Port} Retry: $row->{Connect_retry}";
+                    push @info, "  Last Error: [$row->{Laster_errno}] $row->{Last_error}" if $row->{Last_error};
+                    push @info, "  Offset from Master: " . ($master_pos - $row->{Pos});
+                    push @info, " ";
+                }
+            } else {
+                push @info, "Unable to connect to $host for slave status";
+            }
+        }
+    }
+    push @info, "No Remote Slaves Found", " " unless $local_slaves;
+
+    return @info;
 }
 
 #
@@ -852,21 +997,8 @@ sub get_id_explain {
     }
 
     my $db = $PROCS{$id}->{db};
-    my $dbh;
-    if (!($dbh = $DB{$db})) { 
-        my $connect = "DBI:mysql:$db";
+    my $dbh = get_dbh($db, %dsn_opts) || return;
 
-        # Try to connect as the default user
-        $dbh = DBI->connect("$connect$dsn_opts", $opt_dbuser, $opt_passwd, {PrintError=>0});
-        if (!$dbh) {
-            # Otherwise, prompt for an alternate username/password
-            my $alt_dbuser = get_string("Unable to connect to $db as $opt_dbuser, enter user for $db: ");
-            my $alt_passwd = get_string("Password: ", NOECHO);
-            $dbh = DBI->connect("$connect$dsn_opts", $alt_dbuser, $alt_passwd, {PrintError=>0}) ||
-                return "Unable to connect to $connect$dsn_opts as $opt_dbuser or $alt_dbuser";
-        }
-        $DB{$db} = $dbh;
-    }
     my $st_explain = $dbh->prepare("explain $PROCS{$id}->{Info}");
     $st_explain->execute();
 
@@ -1206,6 +1338,58 @@ sub get_mysql_memory {
         }
     }
     return undef;
+}
+
+#
+#  Returns a dbh for a mysql db.  Prompts the user
+#  for a username/password if unable to connect as the default
+#  user.
+#
+#  Additional params will be appended to the dsn.
+# 
+#  dbh's are cached so that the next time the same one is needed
+#  a reconnection is not needed.
+#
+sub get_dbh {
+    my $db = shift;
+    my %params = @_;
+
+    my $dsn_opts = get_dsnoptstr(%params);
+
+    my $dbh;
+    my $dsn = "DBI:mysql:$db$dsn_opts";
+    if (!($dbh = $DB{$dsn})) { 
+
+        # Try to connect as the default user
+        print STDERR "Getting dbh for $dsn with user=$opt_dbuser\n" if $DEBUG;
+        $dbh = DBI->connect($dsn, $opt_dbuser, $opt_passwd, {PrintError=>0});
+        if (!$dbh) {
+            # Otherwise, prompt for an alternate username/password
+            my $dbname = $dsn;
+            $dbname =~ s/.*://;
+            my $alt_dbuser = get_string("Unable to connect to $dbname as $opt_dbuser, enter another user user: ");
+            my $alt_passwd = get_string("Password: ", NOECHO);
+            $dbh = DBI->connect($dsn, $alt_dbuser, $alt_passwd, {PrintError=>0}) || 
+                pause("Unable to connect to $dsn as $opt_dbuser or $alt_dbuser") && return 0;
+            print STDERR "Getting dbh for $dsn with user=$alt_dbuser\n" if $DEBUG;
+        }
+        $DB{$dsn} = $dbh;
+    }
+    return $dbh;
+}
+
+#
+#  Return a list of dsn options specified by key/value pairs in %params.
+#  Return format is:
+#     ;key1=val1;key2=val2;...
+#
+sub get_dsnoptstr {
+    my %params = @_;
+    my $ret;
+    foreach my $key (keys %params) {
+        $ret .= ";$key=$params{$key}";
+    }
+    return $ret;
 }
 
 sub version {
