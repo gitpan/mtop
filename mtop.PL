@@ -1,10 +1,17 @@
 #!/usr/local/bin/perl
 
-#  (DO NOT EDIT fwd_skytel, instead edit fwd_skytel.PL and run make
+#  (DO NOT EDIT mtop, instead edit mtop.PL and run make
 
 use Config;
 use File::Basename qw(&basename &dirname);
+use Getopt::Long;
 use strict;
+use vars ( qw( $opt_v $opt_r ) );
+
+GetOptions(
+    "version=s"=>\$opt_v,
+    "release=s"=>\$opt_r,
+);
 
 # This forces PL files to create target in same directory as PL file.
 # This is so that make depend always knows where to find PL derivatives.
@@ -21,6 +28,9 @@ print "Extracting $file (with variable substitutions)\n";
 print OUT <<"!GROK!THIS!";
 $Config{'startperl'}
 
+\$VERSION = "$opt_v";
+\$RELEASE = "$opt_r";
+
 !GROK!THIS!
 
 # In the following, perl variables are not expanded during extraction.
@@ -29,45 +39,60 @@ $Config{'startperl'}
 
 print OUT <<'!NO!SUBS!';
 #
-# $Id: mtop.PL,v 1.21 2001/12/14 20:39:52 mprewitt Exp $
+# $Id: mtop.PL,v 1.31 2002/01/07 12:38:32 mprewitt Exp $
 #
-# (C) 2001 Chelsea Networks/Marc Prewitt <mprewitt@chelsea.net>, under 
-# the GNU GPL.
+# mtop - Shows the MySQL commands consuming the greatest time
+# Copyright (C) 2002 Marc Prewitt/Chelsea Networks <mprewitt@chelsea.net>
 # 
-# mtop is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2, or (at your option)
-# any later version.
-#
-# mtop is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You may have received a copy of the GNU General Public License
-# along with mtop see the file COPYING.  If not, write to the
-# Free Software Foundation, Inc., 59 Temple Place - Suite 330,
-# Boston, MA 02111-1307, USA.
+# This program is free software; you can redistribute it and/or modify it 
+# under the terms of the GNU General Public License as published by the
+# Free Software Foundation; either version 2 of the License, or (at your
+# option) any later version.
+# 
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+# or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+# for more details.
+# 
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+# 
 #
 =head1 NAME 
 
 B<mtop> - Shows top mysql threads
 
+=head1 SYNOPSIS
+
+    mtop [--host {mysql_host}] [--dbuser {mysql_user}] 
+        [--password {mysqluser_pw}] [--seconds {refresh}] [--[no]idle] 
+        [--user {user}] [--manualrefresh]
+
+    mtop --help
+
+    mtop --version
+
 =head1 DESCRIPTION
 
-    mtop [--host {mysql_host}] [--dbuser {mysql_user}] [--password {mysqluser_pw}] [--seconds {refresh}] [--[no]idle] [--user {user}]
-
-Shows the commands consuming the greatest time.  By default, only non-sleeping 
+Shows the MySQL commands consuming the greatest time.  By default, only non-sleeping 
 threads are shown, the B<--idle> option shows idle threads.  While running several 
 keys will affect the operation of B<mtop>.  Hitting B<h> or B<?> will show the 
 available options.
+
+Normally, run as a console program this will allow you to see errant or badly 
+optimized queries as they will stay on the screen for a while.  However, if you
+are hunting for short lived queries, running in the B<manualrefresh> mode with a 
+short refresh time will allow you to catch short lived queries as well.
 
 The following keys are active while mtop is running:
 
     q       - quit
     h or ?  - help
+    f       - flush status
     k       - kill processes; send a kill to a list of ids
     s       - change the number of seconds to delay between updates
+    m       - toggle manual refresh mode on/off
     u       - display process for only one user (+ selects all users)
     i       - toggle all/non-Sleeping process display
     o       - reverse the sort order
@@ -76,26 +101,53 @@ The following keys are active while mtop is running:
 
 =head1 OPTIONS
 
+All options can be abbreviated by their shortest unique abbreviation.
+
 =over 4
 
-B<--host {mysql_host}>  By default, the mysqld on localhost is monitored.  Specify an alternate host
+=item B<-?>, B<--help>  
+
+Show the help screen and exit.
+
+=item B<-v>, B<--version>  
+
+Show the version number and exit.
+
+=item B<-h> {mysql_host}, B<--host>={mysql_host}  
+
+By default, the mysqld on localhost is monitored.  Specify an alternate host
 with this option.
 
-B<--dbuser {mysql_user}>  By default, the user 'mysqltop' is used to connect to the database.  Specify an alternate user with this option.
+=item B<-dbu> {mysql_user} B<--dbuser>={mysql_user}
 
-B<--password {mysqluser_pw}>  By default, there is no password associated with the mysqltop
+By default, the user 'mysqltop' is used to connect to the database.  Specify an alternate user with this option.
+
+=item B<-p> {mysqluser_pw}, B<--password>={mysqluser_pw}
+
+By default, there is no password associated with the mysqltop
 user, specify a password with this option.
 
-B<--seconds {refresh}>  The default screen refresh is 5 seconds.
+=item B<-s> {refresh}, B<--seconds>={refresh}
 
-B<--[no]idle> By default, processes in the B<Sleep> command state are not shown.  This option turns
+The default screen refresh is 5 seconds.
+
+=item B<-i>, B<--[no]idle> 
+
+By default, processes in the B<Sleep> command state are not shown.  This option turns
 on display of idle threads.
 
-B<--user {user}>  Show only threads owned by this user.
+=item B<-u> {user}, B<--user>={user}
+
+Show only threads owned by this user.
+
+=item B<-m>, B<--manualrefresh> 
+
+In this mode, the screen only refreshes when the user hits a key on the
+keyboard.  The screen will refresh automatically until a query is seen and then wait for 
+further input.  An uppercase M will appear in the top right hand corner of the screen to 
+indicate that you are in this mode.
 
 =back
-
-Requires DBD::mysql, Curses, and Net::Domain.
 
 =head1 SETUP
 
@@ -104,17 +156,36 @@ called B<mysqltop> which has no password.  For security purposes, this user shou
 all privileges set to B<N> except B<Process_priv> which must be set to B<Y>.
 
 In addition, the B<mysqltop> user must have B<Select_priv> to the B<test> database.  This 
-requirement is only needed becuase the DBI driver requires a database to connect to even
-though no database commands are issued.  The only commands this program issues are non-database
-specific (SHOW FULL PROCESSLIST, SHOW VARIABLES, KILL id).
+requirement is only needed because the DBI driver requires a database to connect to even
+though no database commands are issued.  Most commands this program issues are non-database
+specific (SHOW FULL PROCESSLIST, SHOW VARIABLES, KILL id).  When database-specific
+commands are needed, mtop will prompt for a username/password if the default one fails.
+
+To install mtop, run the following shell commands:
+
+    perl Makefile.PL
+    make
+    make install
+
+The default {install_prefix} is /usr/local which means that mtop is installed 
+in /usr/local/bin/.  To change this, run:
+
+    perl Makefile.PL --prefix={install_prefix}
+    
+or modify the PREFIX line in Makefile.PL.
+
+Requires DBD::mysql, Curses, and Net::Domain.
 
 =head1 AUTHOR
 
 Marc Prewitt, Chelsea Networks <mprewitt@chelsea.net>
 
-=head1 TODO
+Copyright (C) 2002 Marc Prewitt/Chelsea Networks, under the GNU GPL.
+mtop comes with ABSOLUTELY NO WARRANTY. This is free software, and you are
+welcome to redistribute it under certain conditions; see the COPYING file 
+for details.
 
-Add flush status
+=head1 TODO
 
 Offer sorts by other columns
 
@@ -129,9 +200,7 @@ Add 'n' command and properly calculate number of lines on screen.
 =cut
 
 use strict;
-use vars qw( $VERSION %PROC_COLS @PROC_COLS %EXPLAIN_COLS @EXPLAIN_COLS $WINDOW_RESIZE );
-
-$VERSION = (qw$Revision: 1.21 $)[1];
+use vars qw( $VERSION $RELEASE %PROC_COLS @PROC_COLS %EXPLAIN_COLS @EXPLAIN_COLS $WINDOW_RESIZE );
 
 use DBI;
 use DBD::mysql;
@@ -152,6 +221,9 @@ my $opt_passwd = "";
 my $opt_seconds = 5;
 my $opt_idle = 0;
 my $opt_user;
+my $opt_version;
+my $opt_help;
+my $opt_manualrefresh;
 
 my $PROMPT_ROW = 3;
 my $SORT = DESC;
@@ -194,17 +266,23 @@ my %VARS;    # 'show variables' info
 my %DB;    
 
 GetOptions(
-        "host:s"     => \$opt_host,
-        "dbuser:s"   => \$opt_dbuser,
-        "dbport:i"   => \$opt_dbport,
-        "dbsocket:s" => \$opt_dbsocket,
-        "user:s"     => \$opt_user,
-        "password:s" => \$opt_passwd,
-        "seconds:i"  => \$opt_seconds,
-        "idle!"      => \$opt_idle,
-    ) || die "Usage: mtop [--host {mysql_host}] [--dbuser {mysql_user}] [--password {mysqluser_pw}] [--seconds {refresh}] [--[no]idle] [--user {user}]\n";
-
+        'h|host:s'      => \$opt_host,
+        'dbuser:s'      => \$opt_dbuser,
+        'dbport:i'      => \$opt_dbport,
+        'dbsocket:s'    => \$opt_dbsocket,
+        'user:s'        => \$opt_user,
+        'password:s'    => \$opt_passwd,
+        'seconds:i'     => \$opt_seconds,
+        'version'       => \$opt_version,
+        'help|?'          => \$opt_help,
+        'manualrefresh' => \$opt_manualrefresh,
+        'idle!'         => \$opt_idle,
+    ) || usage();
+    
 $| = 1;
+
+show_version() if $opt_version;
+usage() if $opt_help;
 
 my $dbh;
 my $dsn = "DBI:mysql:database=test";
@@ -220,9 +298,8 @@ $dbh = DBI->connect("$dsn$dsn_opts", $opt_dbuser, $opt_passwd, {PrintError=>0}) 
 my $st_procs   = $dbh->prepare("show full processlist");
 my $st_status  = $dbh->prepare("show status");
 my $st_kill    = $dbh->prepare("kill ?");
+my $st_flush   = $dbh->prepare("flush status");
 my $st_vars    = $dbh->prepare("show variables");
-# This will have to be on a different dbh...
-my $st_explain = $dbh->prepare("explain ?");
 
 my $CURSES_INIT;
 my $SCREEN_WIDTH;
@@ -241,41 +318,53 @@ setpriority(0,0,20);
 
 my $reset = time + $opt_seconds;
 refresh_vars();
+refresh_screen();
 while (1) {
     noecho();               
     nodelay(1);             # so getch() is non-blocking
-    if ((my $key = getch()) ne ERR) {        
-        my $status = 0;
-        if ($key eq "q") {
-            last;
-        } elsif ($key eq "k") {
-            $status = do_kill();
-        } elsif ($key eq "s") {
-            $status = do_seconds();
-        } elsif ($key eq "i") {
-            if ($opt_idle) { $opt_idle = 0 } else { $opt_idle = 1 };
-            $status = 1;
-        } elsif ($key eq "u") {
-            $status = do_user();
-        } elsif ($key eq "+") {
-            $status = $opt_user = "";
-        } elsif ($key eq "e") {
-            $status = do_explain();
-        } elsif ($key eq "o") {
-            if ($SORT) { $SORT = 0 } else { $SORT = 1 };
-            $status = 1;
-        } elsif ($key eq "z") {
-            $status = do_zoom();
-        } elsif ($key eq "?" || $key eq "h") {
-            $status = do_help();
-        } else {
-            refresh_screen();
-        }
-        refresh_screen() if $status;
+
+    my $key;
+    if ( $opt_manualrefresh && scalar %PROCS ) {
+        $key = pause("Press any key to continue or e/z:");
+    } else {
+        $key = getch();
     }
+    my $refresh = 0;
+    if ($key eq "q") {
+        last;
+    } elsif ($key eq "k") {
+        $refresh = do_kill();
+    } elsif ($key eq "s") {
+        $refresh = do_seconds();
+    } elsif ($key eq "m") {
+        if ($opt_manualrefresh) { $opt_manualrefresh = 0 } else { $opt_manualrefresh = 1 };
+        next; # skip the rest of the loop to immediately go into manual mode
+    } elsif ($key eq "i") {
+        if ($opt_idle) { $opt_idle = 0 } else { $opt_idle = 1 };
+        $refresh = 1;
+    } elsif ($key eq "u") {
+        $refresh = do_user();
+    } elsif ($key eq "+") {
+        $refresh = $opt_user = "";
+    } elsif ($key eq "e") {
+        $refresh = do_explain();
+    } elsif ($key eq "f") {
+        $refresh = do_flush();
+    } elsif ($key eq "o") {
+        if ($SORT) { $SORT = 0 } else { $SORT = 1 };
+        $refresh = 1;
+    } elsif ($key eq "z") {
+        $refresh = do_zoom();
+    } elsif ($key eq "?" || $key eq "h") {
+        $refresh = do_help();
+    } else {
+        refresh_screen();
+    }
+    refresh_screen() if $refresh;
+
     my ($in, $out) = ('', '');
-    vec($in,fileno(STDIN),1) = 1;           # look for key on stdin 
-    select($out = $in,undef,undef,$opt_seconds);# wait up to this long
+    vec($in,fileno(STDIN),1) = 1;                # look for key on stdin 
+    select($out = $in,undef,undef,$opt_seconds); # wait up to this long
     if ($WINDOW_RESIZE) {
         handle_resize();
         $WINDOW_RESIZE = 0;
@@ -311,7 +400,7 @@ sub do_help {
     refresh_vars();
     my $keybuffer = friendly_bytes($VARS{key_buffer_size});
     my $sortbuffer = friendly_bytes($VARS{sort_buffer});
-    my $help = qq{mtop version $VERSION, Copyright (c) 2001, Chelsea Networks
+    my $help = qq{mtop ver $VERSION/$RELEASE, Copyright (c) 2002, Marc Prewitt/Chelsea Networks
 
 A top users display for mysql
 
@@ -319,8 +408,10 @@ These single-character commands are available:
 
 q       - quit
 h or ?  - help; show this text
+f       - flush status
 k       - kill processes; send a kill to a list of ids
 s       - change the number of seconds to delay between updates
+m       - toggle manual refresh mode on/off
 u       - display process for only one user (+ selects all users)
 i       - toggle all/non-Sleeping process display
 o       - reverse the sort order
@@ -402,11 +493,19 @@ sub do_kill {
     return 1;
 }
 
+#
+#  Flush the status to reset the global variables
+#
+sub do_flush {
+    $st_flush->execute() || error("Unable to execute flush status " . $dbh->errstr());
+    refresh_vars();
+}
+
 # 
 #  Does a 'show variables' and updates %VARS with the results
 #
 sub refresh_vars {
-    $st_vars->execute() || die "Unable to execute show variables" . $dbh->errmsg();
+    $st_vars->execute() || die "Unable to execute show variables" . $dbh->errstr() . "\n";
     while (my $row = $st_vars->fetchrow_hashref()) {
         $VARS{$row->{Variable_name}} = $row->{Value};
     }
@@ -416,7 +515,7 @@ sub refresh_vars {
 #  Does a 'show status' and updates %STATS with the results
 #
 sub refresh_stats {
-    $st_status->execute() || die "Unable to execute show status" . $dbh->errmsg();
+    $st_status->execute() || die "Unable to execute show status" . $dbh->errstr() . "\n";
     while (my $row = $st_status->fetchrow_hashref()) {
         $STATS{$row->{Variable_name}} = commify($row->{Value});
     }
@@ -433,7 +532,7 @@ sub header() {
     if (!$opt_host) {
         $load_avg .= `uptime`;
         chomp($load_avg);
-        $load_avg .=~ s/.*load/load/;
+        $load_avg =~ s/.*load/load/;
     }
 
     my $time  = $STATS{Uptime}; $time =~ s/,//g;
@@ -452,6 +551,13 @@ sub header() {
     addstr(1,0, "$STATS{Threads_connected} threads: $STATS{Threads_running} running, $STATS{Threads_cached} cached. Queries/slow: $STATS{Questions}/$STATS{Slow_queries} Cache Hit: $chit%");
 
     addstr(2,0, "Opened tables: $STATS{Opened_tables}  RRN: $STATS{Handler_read_rnd_next}  TLW: $STATS{Table_locks_waited}  SFJ: $STATS{Select_full_join}  SMP: $STATS{Sort_merge_passes}");
+    if ($opt_manualrefresh) {
+        standout();
+        addstr(0,$SCREEN_WIDTH-1, "M");
+        standend();
+    } else {
+        addstr(0,$SCREEN_WIDTH-1, " ");
+    }
 }
 
 #
@@ -462,7 +568,7 @@ sub refresh_screen {
     move(0, 0);
     clrtobot();
     header();
-    $st_procs->execute() || die "Unable to execute show procs" . $dbh->errmsg();
+    $st_procs->execute() || die "Unable to execute show procs" . $dbh->errstr() . "\n";
     my @rows;
     while (my $row = $st_procs->fetchrow_hashref()) {
         if ( !$opt_user || $opt_user eq $row->{User} ) {
@@ -487,11 +593,15 @@ sub refresh_screen {
             if ( $width == -1 ) {
                 $width = $SCREEN_WIDTH - $c;
             }
+
             my $data = $row->{$col};
-            if ( $col eq "Host" ) {
-                $data =~ s/\.$DOMAIN//o;
-            }
-            $data = substr($data, 0, $width);
+            # Remove nl and multi spaces so that data doesn't move off the 
+            # line it's supposed to be on.
+            $data =~ s/\n//g;
+            $data =~ s/\s+/ /g;
+            $data =~ s/\.$DOMAIN//o if $col eq "Host";
+            $data = substr($data, 0, $width);  # limit the data to the width of the column
+
             my $query_color = query_color($row);
             attron($query_color) if $query_color;
             addstr($rownum, $c, $data) if $data;
@@ -544,8 +654,8 @@ sub get_id_explain {
         $dbh = DBI->connect("$connect$dsn_opts", $opt_dbuser, $opt_passwd, {PrintError=>0});
         if (!$dbh) {
             # Otherwise, prompt for an alternate username/password
-            my $alt_dbuser = get_string("Unable to connect to $db as $opt_dbuser, enter user for $db ");
-            my $alt_passwd = get_string("Password ", NOECHO);
+            my $alt_dbuser = get_string("Unable to connect to $db as $opt_dbuser, enter user for $db: ");
+            my $alt_passwd = get_string("Password: ", NOECHO);
             $dbh = DBI->connect("$connect$dsn_opts", $alt_dbuser, $alt_passwd, {PrintError=>0}) ||
                 return "Unable to connect to $connect$dsn_opts as $opt_dbuser or $alt_dbuser";
         }
@@ -587,6 +697,8 @@ sub get_string {
     my $noecho = shift;
     my $string = "";
 
+    move($SCREEN_HEIGHT-1, 0);
+    clrtoeol();
     standout();
     addstr($SCREEN_HEIGHT-1, 0, $prompt);
     standend();
@@ -612,7 +724,7 @@ sub more {
         foreach (split(/\n/)) {
             addstr($row++, 0, $_);
             if ($row == $SCREEN_HEIGHT-1) {
-                pause("More: ");
+                return if lc(pause("More: ")) eq "q";
                 move(0,0);
                 clrtobot();
                 $row = 0;
@@ -622,8 +734,9 @@ sub more {
 }
 
 #
-#  Displays a 'press any key' message at the bottom of the 
-#  screen and waits for the user to press a key.
+#  Displays the first argument or 'press any key' at the bottom of the 
+#  screen and waits for the user to press a key.  The message is cleared
+#  after a key is pressed.
 #
 #  Returns the character that was pressed.
 #
@@ -637,15 +750,18 @@ sub pause {
     my $ch = getch();
     move($SCREEN_HEIGHT-1, 0);
     clrtoeol();
+    refresh();
     return $ch;
 }
 
 #
-# print a highlighted message at the bottom of the screen
+# Print a highlighted message at the bottom of the screen
 #
 sub message {
     my $msg = shift;
     standout();
+    move($SCREEN_HEIGHT-1, 0);
+    clrtoeol();
     addstr($SCREEN_HEIGHT-1, 0, $msg);
     standend();
     move(0,0);
@@ -776,8 +892,61 @@ sub sort_procs {
         return $a->{Time} <=> $b->{Time};
     }
 }
-END {
+
+sub show_version {
     endwin() if $CURSES_INIT;
+    print "\n", version(), "\n";
+    exit;
+}
+
+sub version {
+    return "mtop ver $VERSION/$RELEASE";
+}
+
+sub usage {
+    endwin() if $CURSES_INIT;
+    print "\n", version(), qq{
+
+Copyright (C) 2002 Marc Prewitt/Chelsea Networks <mprewitt\@chelsea.net>
+mtop comes with ABSOLUTELY NO WARRANTY. This is free software, and you are
+welcome to redistribute it under certain conditions; see the COPYING file 
+for details.
+
+Usage: mtop [OPTIONS]
+
+  --version                  Show version number and exit
+  --help                     Show this screen and exit
+  --host {mysql_host}        Connect to the MySQL server on {mysql_host}
+  --dbuser {mysql_user}      Connect to the MySQL server as {mysql_user}
+  --password {mysqluser_pw}  Use {mysqluser_pw} when connecting
+  --seconds {refresh}        Refresh the screen each {refresh} seconds
+  --[no]idle                 Display/don't display idle threads
+  --user {user}              Display threads for only {user}
+  --manualrefresh            Wait for user input between refreshes
+
+All options can be truncated to their shortest unique abbreviation.
+
+See 'man mtop' or 'perldoc mtop' for more information.
+
+};
+    exit();
+}
+
+sub cleanup_win {
+    if ($CURSES_INIT) {
+        move(0,0);
+        clrtobot();
+        refresh();
+        endwin();
+    }
+}
+
+sub die {
+    CORE::die(@_);
+}
+
+END {
+    cleanup_win();
 }
 
 =begin showsatus

@@ -1,0 +1,47 @@
+Release v0-2-1
+==============
+
+mtop
+----
+
+Added --help option.
+
+Added --version to only show version info.
+
+Added --manualrefresh/interactive keyboard 'm' to prompt for screen refresh.
+
+Override CORE::die to stop curses if it's running so that fatal error messages
+can be seen.
+
+Fixed header uptime display.
+
+Screen refresh wasn't refreshing.  Added initial screen refresh and
+refresh even if getch returns ERR which it seems to be doing if no
+char is waiting in the buffer.
+
+Thanks to Johan Ekenberg for the uptime patch, for noticing the
+refresh problem and suggesting the --manualrefresh option.
+
+Added q to 'more'
+
+Added flush command
+
+Fixed message clearing in between messages
+
+Fixed errmsg (should be errstr)
+
+Protect process display from newlines and squeeze multiple spaces.
+
+Changed to get version number from make process.
+
+Cleaned up screen before exiting.
+
+Makefile.PL
+-----------
+
+Added --prefix option to allow relocation of binary without modifying
+the distribution.
+
+Changed default install prefix location to /usr/local/ (mtop will
+install in /usr/local/bin).
+
