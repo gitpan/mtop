@@ -1,3 +1,21 @@
+Release v0-5-1
+==============
+
+mtop
+----
+
+Added new vars and stats screens.  The stats screen updates until a key
+is pressed.  The vars screen shows the page and returns to the main screen.
+
+Moved some of the common key handling routines into functions.
+
+Reduced the amount of space statistics numbers take by only showing
+2-4 significant digits.
+
+Added mysqld memory usage for localhost in main header.  Currently uses 
+/proc fs and only works for root or mysql user because either the pidfile 
+may not have permissive permissions or the proc directory may not.
+
 Release v0-4-1
 ==============
 

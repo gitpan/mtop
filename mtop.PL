@@ -39,7 +39,7 @@ $Config{'startperl'}
 
 print OUT <<'!NO!SUBS!';
 #
-# $Id: mtop.PL,v 1.38 2002/02/03 05:10:24 mdprewitt Exp $
+# $Id: mtop.PL,v 1.43 2002/03/07 03:54:11 mdprewitt Exp $
 #
 # mtop - Shows the MySQL commands consuming the greatest time
 # Copyright (C) 2002 Marc Prewitt/Chelsea Networks <mprewitt@chelsea.net>
@@ -102,7 +102,17 @@ The following keys are active while mtop is running:
     i - toggle all/non-Sleeping process display
     o - reverse the sort order
     e - explain a process; show query optimizer info
+    t - show mysqld stats (show status/mysqladmin ext)
+    v - show mysqld variables (show variables/mysqladmin vars)
     z - zoom in on a process; show sql statement detail 
+
+When viewing the I<stats> screen, the screen will refresh until a key is 
+pressed at which point you will return to the main screen.  The bottom of the 
+I<stats> screen is denoted with a line containing B<--->, if you do not see
+that line, resize your screen until you do.
+
+The I<variables> screen only shows the information once and returns to the main 
+screen as the variables do not change after server startup.
 
 =head1 OPTIONS
 
@@ -256,7 +266,7 @@ Add support for saving commandline opts in ~/.mtop
 
 Add 'n' command and properly calculate number of lines on screen.
 
-    $Id: mtop.PL,v 1.38 2002/02/03 05:10:24 mdprewitt Exp $
+    $Id: mtop.PL,v 1.43 2002/03/07 03:54:11 mdprewitt Exp $
 
 =cut
 
@@ -390,15 +400,14 @@ $SIG{WINCH} = sub { $WINDOW_RESIZE = 1 };
 my $reset = time + $opt_seconds;
 refresh_vars();
 refresh_screen();
-while (1) {
-    noecho();               
-    nodelay(1);             # so getch() is non-blocking
 
+
+while (1) {
     my $key;
     if ( $opt_manualrefresh && scalar %PROCS ) {
         $key = pause("Press any key to continue or e/z:");
     } else {
-        $key = getch();
+        $key = getch_nb();
     }
     my $refresh = 0;
     if ($key eq "q") {
@@ -423,6 +432,10 @@ while (1) {
         $refresh = $opt_user = "";
     } elsif ($key eq "e") {
         $refresh = do_explain();
+    } elsif ($key eq "t") {
+        $refresh = do_stats();
+    } elsif ($key eq "v") {
+        $refresh = do_vars();
     } elsif ($key eq "f") {
         $refresh = do_flush();
     } elsif ($key eq "o") {
@@ -437,12 +450,10 @@ while (1) {
     }
     refresh_screen() if $refresh;
 
-    my ($in, $out) = ('', '');
-    vec($in,fileno(STDIN),1) = 1;                # look for key on stdin 
-    select($out = $in,undef,undef,$opt_seconds); # wait up to this long
+    sleep_or_key($opt_seconds);
+
     if ($WINDOW_RESIZE) {
         handle_resize();
-        $WINDOW_RESIZE = 0;
     }
 }
 
@@ -465,6 +476,67 @@ sub do_zoom {
             do_explain();
         }
     }
+    return 1;
+}
+
+#
+#  Show the mysqld variables
+#
+sub do_vars {
+    refresh_vars();
+
+    my @keys = sort keys %VARS;
+    my $mid = int(scalar @keys / 2);
+
+    my @vars;
+    for (my $i=0; $i<=$mid; $i++) {
+        my $val1 = $VARS{$keys[$i]};
+        my $val2 = $VARS{$keys[$i+$mid]};
+        $val1 = commify($val1) if $val1 =~ /^\d+$/;
+        $val2 = commify($val2) if $val2 =~ /^\d+$/;
+        my $spaces1 = " " x ($SCREEN_WIDTH/2 - length($val1) - length($keys[$i]) - 4);
+        my $spaces2 = " " x ($SCREEN_WIDTH/2 - length($val2) - length($keys[$i+$mid]) - 4);
+        my $line = "$keys[$i]: $spaces1$val1";
+        $line .= "  $keys[$i+$mid]: $spaces2$val2" if $keys[$i+$mid];
+        push @vars, $line;
+    }
+    more(@vars);
+    pause();
+    return 1;
+}
+
+#
+#  Show the mysqld status settings
+#
+sub do_stats {
+    my @keys = sort keys %STATS;
+    my $mid = int(scalar @keys / 2);
+
+    move(0,0);
+    clrtobot();
+
+    do {
+        if ($WINDOW_RESIZE) {
+            handle_resize();
+        }
+
+        my @stats;
+        refresh_stats();
+        my $i;
+        for ($i=0; $i<=$mid; $i++) {
+            my $val1 = $STATS{$keys[$i]};
+            my $val2 = $STATS{$keys[$i+$mid]};
+            $val1 = commify($val1) if $val1 =~ /^\d+$/;
+            $val2 = commify($val2) if $val2 =~ /^\d+$/;
+            my $spaces1 = " " x ($SCREEN_WIDTH/2 - length($val1) - length($keys[$i]) - 4);
+            my $spaces2 = " " x ($SCREEN_WIDTH/2 - length($val2) - length($keys[$i+$mid]) - 4);
+            my $line = "$keys[$i]: $spaces1$val1";
+            $line .= "  $keys[$i+$mid]: $spaces2$val2" if $keys[$i+$mid];
+            addstr($i, 0, $line) if $line;
+        }
+        addstr($i, 0, "---");
+        message("Press any key to return") 
+    } while !sleep_or_key($opt_seconds) || getch_nb() == -1;
     return 1;
 }
 
@@ -493,6 +565,8 @@ u - display process for only one user
 i - toggle all/non-Sleeping process display
 o - reverse the sort order
 e - explain a process; show query optimizer info
+t - show mysqld stats (show status/mysqladmin ext)
+v - show mysqld variables (show variables/mysqladmin vars)
 z - zoom in on a process, show sql statement detail 
 
 Stats Explanation (See SHOW STATUS docs for full details):
@@ -587,6 +661,7 @@ sub do_explain {
     my $line = get_string("explain");
     my @ids = split(/\s+/, $line);
     my @info;
+    message("Waiting for locks...");
     foreach my $id (@ids) {
         push @info,  get_id_explain($id), " ";
     }
@@ -638,7 +713,7 @@ sub refresh_vars {
 sub refresh_stats {
     $st_status->execute() || die "Unable to execute show status" . $dbh->errstr() . "\n";
     while (my $row = $st_status->fetchrow_hashref()) {
-        $STATS{$row->{Variable_name}} = commify($row->{Value});
+        $STATS{$row->{Variable_name}} = $row->{Value};
     }
 }
 
@@ -649,12 +724,15 @@ sub header() {
     refresh_stats();
 
     my $load_avg = "$opt_host ";
-    # Only show load average if we're monitoring the local machine
+    # Only show load average and memory if we're monitoring the local machine
     if (!$opt_host) {
         $load_avg .= `uptime`;
         chomp($load_avg);
         $load_avg =~ s/.*load/load/;
+
     }
+    my $mysql_memory = get_mysql_memory();
+    $mysql_memory = "  MEM: " . friendly_bytes($mysql_memory) if $mysql_memory;
 
     my $time  = $STATS{Uptime}; $time =~ s/,//g;
     my $days  = int( $time / 86400);
@@ -663,15 +741,23 @@ sub header() {
     $min   = "0$min"   if $min < 10;
     $hours = " $hours" if $hours < 10;
     
-    my $krr = $STATS{Key_read_requests} || 1;    $krr =~ s/,//g;
-    my $kr  = $STATS{Key_reads};                 $kr  =~ s/,//g;
+    my $krr = $STATS{Key_read_requests} || 1;
+    my $kr  = $STATS{Key_reads};
     my $chit = 100 - ($kr/$krr) * 100;
     $chit = sprintf("%2.2f",$chit);
 
-    addstr(0,0, $load_avg . " mysqld $VARS{version} up $days day(s), $hours:$min hrs");
-    addstr(1,0, "$STATS{Threads_connected} threads: $STATS{Threads_running} running, $STATS{Threads_cached} cached. Queries/slow: $STATS{Questions}/$STATS{Slow_queries} Cache Hit: $chit%");
+    my $questions   = friendly_number($STATS{Questions}, 1);
+    my $slow        = friendly_number($STATS{Slow_queries}, 1);
+    my $open_tables = friendly_number($STATS{Opened_tables}, 1);
+    my $rrn         = friendly_number($STATS{Handler_read_rnd_next}, 1);
+    my $tlw         = friendly_number($STATS{Table_locks_waited}, 1);
+    my $sfj         = friendly_number($STATS{Select_full_join}, 1);
+    my $smp         = friendly_number($STATS{Sort_merge_passes}, 1);
 
-    addstr(2,0, "Opened tables: $STATS{Opened_tables}  RRN: $STATS{Handler_read_rnd_next}  TLW: $STATS{Table_locks_waited}  SFJ: $STATS{Select_full_join}  SMP: $STATS{Sort_merge_passes}");
+    addstr(0,0, $load_avg . " mysqld $VARS{version} up $days day(s), $hours:$min hrs");
+    addstr(1,0, "$STATS{Threads_connected} threads: $STATS{Threads_running} running, $STATS{Threads_cached} cached. Queries/slow: $questions/$slow Cache Hit: $chit%");
+
+    addstr(2,0, "Opened tables: $open_tables  RRN: $rrn  TLW: $tlw  SFJ: $sfj  SMP: $smp$mysql_memory");
     if ($opt_manualrefresh) {
         standout();
         addstr(0,$SCREEN_WIDTH-1, "M");
@@ -886,6 +972,7 @@ sub message {
     standend();
     move(0,0);
     refresh();
+    return 1;
 }
 
 #
@@ -894,6 +981,39 @@ sub message {
 sub error {
     message(@_);
     return 0;
+}
+
+# 
+#  Sleep for the number of seconds provided or
+#  until a key is pressed (on stdin)
+#
+#  Returns 0 if timed out, 1 if key pressed
+#
+#  From the 'Perl Cookbook', Chapter 15.12, Managing the Screen
+#  and 7.13, Reading from Many File Handles Without Blocking
+#
+sub sleep_or_key {
+    my $secs = shift;
+
+    my ($in, $out) = ('', '');
+    vec($in,fileno(STDIN),1) = 1;         # look for key on stdin 
+    my $nfound = select($out = $in,undef,undef,$secs); # wait up to this long
+    if ($nfound && vec($out, fileno(STDIN), 1)) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+#
+#  Returns a key pressed in non-blocking mode
+#  Doesn't restore previous blocking mode, so
+#  reset as needed
+#
+sub getch_nb {
+    noecho();               
+    nodelay(1);             # so getch() is non-blocking
+    return getch();
 }
 
 #
@@ -936,21 +1056,41 @@ sub split_sql {
 #  Convert a number into KB, MB, GB, TB
 #
 sub friendly_bytes {
+    return friendly_number(@_) . "B";
+}
+
+#
+#  Convert a number into K, M, G, T
+#
+#  $i: number to convert
+#  $d: number of decimal places to show if $i is < 1024
+#
+sub friendly_number {
     my $i = shift;
+    my $d = shift;
 
-    return "${i}B" if $i < 1024;
-
-    $i = int($i/1024);
-    return "${i}KB" if $i < 1024;
-
-    $i = int($i/1024);
-    return "${i}MB" if $i < 1024;
-
-    $i = int($i/1024);
-    return "${i}GB" if $i < 1024;
-
-    $i = int($i/1024);
-    return "${i}TB";
+    my ($size, $ret_i);
+    if ($i < 1024) {
+        $ret_i = $i;
+    } elsif ( ($i = $i/1024) < 1024 ) {
+        $ret_i = $i;
+        $size = "K";
+    } elsif ( ($i = $i/1024) < 1024 ) {
+        $ret_i = $i;
+        $size = "M";
+    } elsif ( ($i = $i/1024) < 1024 ) {
+        $ret_i = $i;
+        $size = "G";
+    } else {
+        $ret_i = $i = $i/1024;
+        $size = "T";
+    }
+    if ($d && int($ret_i) != $ret_i) {
+        $ret_i = sprintf("%.${d}f", $ret_i);
+    } else {
+        $ret_i = int($ret_i);
+    }
+    return "$ret_i$size";
 }
 
 #  
@@ -1021,6 +1161,7 @@ sub handle_resize {
     endwin() if $CURSES_INIT;
     init_screen();
     refresh();
+    $WINDOW_RESIZE = 0;
 }
 
 sub sort_procs {
@@ -1035,6 +1176,36 @@ sub show_version {
     endwin() if $CURSES_INIT;
     print "\n", version(), "\n";
     exit;
+}
+
+#
+#  Returns the pid of the running mysql server or
+#  0 if the pid cannot be determined.
+#
+sub get_mysql_pid {
+    if ( -r $VARS{pid_file} ) {
+        open(PID, $VARS{pid_file}) || return undef;
+        chomp(my $pid = <PID>);
+        return $pid;
+    } else {
+        return 0;
+    }
+}
+
+#
+#  Returns the amount of memory used by the server.
+#  Currently only works if the server is the local machine.
+#
+my $MYSQL_PID;
+sub get_mysql_memory {
+    if (!$opt_host) {
+        $MYSQL_PID = get_mysql_pid() unless defined $MYSQL_PID;
+
+        if ( $MYSQL_PID && -f "/proc/$MYSQL_PID/as" ) {
+            return ((stat(_))[7]) 
+        }
+    }
+    return undef;
 }
 
 sub version {
@@ -1155,6 +1326,106 @@ show status;
 | Threads_running          | 1          |
 | Uptime                   | 599379     |
 +--------------------------+------------+
+
+show variables;
+
++---------------------------------+-------------------------------------------------------------+
+| Variable_name                   | Value                                                       |
++---------------------------------+-------------------------------------------------------------+
+| back_log                        | 50                                                          |
+| basedir                         | /opt/mysql/3.23.46/                                         |
+| bdb_cache_size                  | 8388600                                                     |
+| bdb_log_buffer_size             | 131072                                                      |
+| bdb_home                        | /export/DB/mysqldb/                                         |
+| bdb_max_lock                    | 10000                                                       |
+| bdb_logdir                      |                                                             |
+| bdb_shared_data                 | OFF                                                         |
+| bdb_tmpdir                      | /tmp/                                                       |
+| bdb_version                     | Sleepycat Software: Berkeley DB 3.2.9a: (November 28, 2001) |
+| binlog_cache_size               | 32768                                                       |
+| character_set                   | latin1                                                      |
+| character_sets                  | latin1 cp1251                                               |
+| concurrent_insert               | ON                                                          |
+| connect_timeout                 | 5                                                           |
+| datadir                         | /export/DB/mysqldb/                                         |
+| delay_key_write                 | ON                                                          |
+| delayed_insert_limit            | 100                                                         |
+| delayed_insert_timeout          | 300                                                         |
+| delayed_queue_size              | 1000                                                        |
+| flush                           | OFF                                                         |
+| flush_time                      | 0                                                           |
+| have_bdb                        | YES                                                         |
+| have_gemini                     | NO                                                          |
+| have_innodb                     | NO                                                          |
+| have_isam                       | YES                                                         |
+| have_raid                       | NO                                                          |
+| have_openssl                    | NO                                                          |
+| have_symlink                    | YES                                                         |
+| init_file                       |                                                             |
+| interactive_timeout             | 28800                                                       |
+| join_buffer_size                | 131072                                                      |
+| key_buffer_size                 | 67104768                                                    |
+| language                        | /opt/mysql/3.23.46/share/mysql/english/                     |
+| large_files_support             | ON                                                          |
+| locked_in_memory                | OFF                                                         |
+| log                             | OFF                                                         |
+| log_update                      | OFF                                                         |
+| log_bin                         | OFF                                                         |
+| log_slave_updates               | OFF                                                         |
+| log_long_queries                | ON                                                          |
+| long_query_time                 | 1                                                           |
+| low_priority_updates            | ON                                                          |
+| lower_case_table_names          | 0                                                           |
+| max_allowed_packet              | 1047552                                                     |
+| max_binlog_cache_size           | 4294967295                                                  |
+| max_binlog_size                 | 1073741824                                                  |
+| max_connections                 | 100                                                         |
+| max_connect_errors              | 10                                                          |
+| max_delayed_threads             | 20                                                          |
+| max_heap_table_size             | 16777216                                                    |
+| max_join_size                   | 4294967295                                                  |
+| max_sort_length                 | 1024                                                        |
+| max_user_connections            | 0                                                           |
+| max_tmp_tables                  | 32                                                          |
+| max_write_lock_count            | 4294967295                                                  |
+| myisam_max_extra_sort_file_size | 256                                                         |
+| myisam_max_sort_file_size       | 2047                                                        |
+| myisam_recover_options          | 0                                                           |
+| myisam_sort_buffer_size         | 8388608                                                     |
+| net_buffer_length               | 16384                                                       |
+| net_read_timeout                | 30                                                          |
+| net_retry_count                 | 10                                                          |
+| net_write_timeout               | 60                                                          |
+| open_files_limit                | 0                                                           |
+| pid_file                        | /export/DB/mysqldb/mysqld.pid                               |
+| port                            | 3306                                                        |
+| protocol_version                | 10                                                          |
+| record_buffer                   | 16773120                                                    |
+| record_rnd_buffer               | 16773120                                                    |
+| query_buffer_size               | 0                                                           |
+| safe_show_database              | OFF                                                         |
+| server_id                       | 20                                                          |
+| slave_net_timeout               | 3600                                                        |
+| skip_locking                    | ON                                                          |
+| skip_networking                 | OFF                                                         |
+| skip_show_database              | OFF                                                         |
+| slow_launch_time                | 2                                                           |
+| socket                          | /var/tmp/mysql.sock                                         |
+| sort_buffer                     | 16777208                                                    |
+| sql_mode                        | 0                                                           |
+| table_cache                     | 256                                                         |
+| table_type                      | MYISAM                                                      |
+| thread_cache_size               | 0                                                           |
+| thread_concurrency              | 10                                                          |
+| thread_stack                    | 65536                                                       |
+| transaction_isolation           | READ-COMMITTED                                              |
+| timezone                        | EST                                                         |
+| tmp_table_size                  | 8388608                                                     |
+| tmpdir                          | /tmp/                                                       |
+| version                         | 3.23.46-log                                                 |
+| wait_timeout                    | 28800                                                       |
++---------------------------------+-------------------------------------------------------------+
+
 =end
 
 !NO!SUBS!
